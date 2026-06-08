@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
-import 'package:otp/otp.dart';
+import 'package:totp/totp.dart';
 
 import '../models/admin_user.dart';
 import '../models/user.dart';
@@ -219,10 +219,10 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  /// Verify TOTP code for admin MFA using the otp package.
+  /// Verify TOTP code for admin MFA using the totp package.
   bool verifyTotpLocally(String secret, String code) {
     try {
-      final generated = OTP.generateTOTPCodeString(
+      final generated = Totp.generateTOTPCodeString(
         secret,
         DateTime.now().millisecondsSinceEpoch,
         algorithm: Algorithm.SHA1,

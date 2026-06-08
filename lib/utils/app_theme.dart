@@ -52,7 +52,7 @@ class AppTheme {
         iconTheme: const IconThemeData(color: AppColors.primary),
         actionsIconTheme: const IconThemeData(color: AppColors.primary),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         elevation: 0,
         color: AppColors.surface,
         surfaceTintColor: Colors.transparent,
@@ -182,7 +182,7 @@ class AppTheme {
         selectedLabelStyle: textTheme.labelSmall,
         unselectedLabelStyle: textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w300),
       ),
-      tabBarTheme: TabBarTheme(
+      tabBarTheme: TabBarThemeData(
         labelColor: AppColors.primary,
         unselectedLabelColor: AppColors.textSecondary,
         labelStyle: textTheme.labelLarge,
@@ -193,7 +193,7 @@ class AppTheme {
       drawerTheme: const DrawerThemeData(
         backgroundColor: AppColors.surface,
       ),
-      dialogTheme: DialogTheme(
+      dialogTheme: DialogThemeData(
         backgroundColor: AppColors.surface,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
