@@ -18,7 +18,6 @@ class ApiException implements Exception {
 class ApiService {
   static ApiService? _instance;
   String? _accessToken;
-  String? _adminToken;
 
   ApiService._();
 
@@ -28,18 +27,16 @@ class ApiService {
   }
 
   void setAccessToken(String? token) => _accessToken = token;
-  void setAdminToken(String? token) => _adminToken = token;
 
   String get baseUrl => AppConstants.apiBaseUrl;
 
-  Map<String, String> _headers({bool isAdmin = false}) {
+  Map<String, String> _headers() {
     final headers = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
-    final token = isAdmin ? _adminToken : _accessToken;
-    if (token != null) {
-      headers['Authorization'] = 'Bearer $token';
+    if (_accessToken != null) {
+      headers['Authorization'] = 'Bearer $_accessToken';
     }
     return headers;
   }
@@ -59,19 +56,14 @@ class ApiService {
     throw ApiException(message, statusCode: response.statusCode);
   }
 
-  Future<dynamic> get(
-    String endpoint, {
-    Map<String, String>? queryParams,
-    bool isAdmin = false,
-  }) async {
+  Future<dynamic> get(String endpoint, {Map<String, String>? queryParams}) async {
     var uri = Uri.parse('$baseUrl$endpoint');
     if (queryParams != null && queryParams.isNotEmpty) {
       uri = uri.replace(queryParameters: queryParams);
     }
-
     try {
       final response = await http
-          .get(uri, headers: _headers(isAdmin: isAdmin))
+          .get(uri, headers: _headers())
           .timeout(const Duration(seconds: 30));
       return _handleResponse(response);
     } on ApiException {
@@ -81,16 +73,12 @@ class ApiService {
     }
   }
 
-  Future<dynamic> post(
-    String endpoint, {
-    Map<String, dynamic>? body,
-    bool isAdmin = false,
-  }) async {
+  Future<dynamic> post(String endpoint, {Map<String, dynamic>? body}) async {
     try {
       final response = await http
           .post(
             Uri.parse('$baseUrl$endpoint'),
-            headers: _headers(isAdmin: isAdmin),
+            headers: _headers(),
             body: body != null ? jsonEncode(body) : null,
           )
           .timeout(const Duration(seconds: 30));
@@ -102,16 +90,12 @@ class ApiService {
     }
   }
 
-  Future<dynamic> put(
-    String endpoint, {
-    Map<String, dynamic>? body,
-    bool isAdmin = false,
-  }) async {
+  Future<dynamic> put(String endpoint, {Map<String, dynamic>? body}) async {
     try {
       final response = await http
           .put(
             Uri.parse('$baseUrl$endpoint'),
-            headers: _headers(isAdmin: isAdmin),
+            headers: _headers(),
             body: body != null ? jsonEncode(body) : null,
           )
           .timeout(const Duration(seconds: 30));
@@ -123,16 +107,10 @@ class ApiService {
     }
   }
 
-  Future<dynamic> delete(
-    String endpoint, {
-    bool isAdmin = false,
-  }) async {
+  Future<dynamic> delete(String endpoint) async {
     try {
       final response = await http
-          .delete(
-            Uri.parse('$baseUrl$endpoint'),
-            headers: _headers(isAdmin: isAdmin),
-          )
+          .delete(Uri.parse('$baseUrl$endpoint'), headers: _headers())
           .timeout(const Duration(seconds: 30));
       return _handleResponse(response);
     } on ApiException {
@@ -144,68 +122,31 @@ class ApiService {
 
   // --- Auth endpoints ---
 
-  Future<Map<String, dynamic>> register({
-    required String name,
-    required String email,
+  Future<void> requestOtp(String phone) async {
+    await post(ApiEndpoints.requestOtp, body: {'phone': phone});
+  }
+
+  Future<Map<String, dynamic>> verifyOtp({
     required String phone,
-    required String password,
-  }) =>
-      post(ApiEndpoints.register, body: {
-        'name': name,
-        'email': email,
-        'phone': phone,
-        'password': password,
-      }) as Future<Map<String, dynamic>>;
-
-  Future<Map<String, dynamic>> login({
-    required String email,
-    required String password,
-  }) =>
-      post(ApiEndpoints.login, body: {
-        'email': email,
-        'password': password,
-      }) as Future<Map<String, dynamic>>;
-
-  Future<Map<String, dynamic>> verifyEmail({
-    required String email,
     required String code,
-  }) =>
-      post(ApiEndpoints.verifyEmail, body: {
-        'email': email,
-        'code': code,
-      }) as Future<Map<String, dynamic>>;
+  }) async {
+    final result = await post(ApiEndpoints.verifyOtp, body: {'phone': phone, 'code': code});
+    return result as Map<String, dynamic>;
+  }
 
-  Future<Map<String, dynamic>> passwordReset({
-    required String email,
-  }) =>
-      post(ApiEndpoints.passwordReset, body: {
-        'email': email,
-      }) as Future<Map<String, dynamic>>;
+  Future<Map<String, dynamic>> refreshToken({required String refreshToken}) async {
+    final result = await post(ApiEndpoints.refreshToken, body: {'refreshToken': refreshToken});
+    return result as Map<String, dynamic>;
+  }
 
-  Future<Map<String, dynamic>> adminLogin({
-    required String email,
-    required String password,
-  }) =>
-      post(ApiEndpoints.adminLogin, body: {
-        'email': email,
-        'password': password,
-      }) as Future<Map<String, dynamic>>;
+  Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {
+    final result = await put(ApiEndpoints.profile, body: data);
+    return result as Map<String, dynamic>;
+  }
 
-  Future<Map<String, dynamic>> verifyMfa({
-    required String sessionToken,
-    required String code,
-  }) =>
-      post(ApiEndpoints.verifyMfa, body: {
-        'sessionToken': sessionToken,
-        'code': code,
-      }) as Future<Map<String, dynamic>>;
-
-  Future<Map<String, dynamic>> refreshToken({
-    required String refreshToken,
-  }) =>
-      post(ApiEndpoints.refreshToken, body: {
-        'refreshToken': refreshToken,
-      }) as Future<Map<String, dynamic>>;
+  Future<void> deleteAccount() async {
+    await delete(ApiEndpoints.deleteAccount);
+  }
 
   // --- Services & Staff ---
 
@@ -225,21 +166,20 @@ class ApiService {
 
   // --- Bookings ---
 
-  Future<Map<String, dynamic>> createBooking(
-    Map<String, dynamic> bookingData,
-  ) =>
-      post(ApiEndpoints.bookings, body: bookingData)
-          as Future<Map<String, dynamic>>;
+  Future<Map<String, dynamic>> createBooking(Map<String, dynamic> bookingData) async {
+    final result = await post(ApiEndpoints.bookings, body: bookingData);
+    return result as Map<String, dynamic>;
+  }
 
-  Future<Map<String, dynamic>> getBooking(String id) =>
-      get(ApiEndpoints.booking(id)) as Future<Map<String, dynamic>>;
+  Future<Map<String, dynamic>> getBooking(String id) async {
+    final result = await get(ApiEndpoints.booking(id));
+    return result as Map<String, dynamic>;
+  }
 
-  Future<Map<String, dynamic>> updateBooking(
-    String id,
-    Map<String, dynamic> data,
-  ) =>
-      put(ApiEndpoints.booking(id), body: data)
-          as Future<Map<String, dynamic>>;
+  Future<Map<String, dynamic>> updateBooking(String id, Map<String, dynamic> data) async {
+    final result = await put(ApiEndpoints.booking(id), body: data);
+    return result as Map<String, dynamic>;
+  }
 
   Future<List<dynamic>> getCustomerBookings(String customerId) async {
     final response = await get(ApiEndpoints.customerBookings(customerId));
@@ -248,66 +188,13 @@ class ApiService {
 
   // --- Reviews ---
 
-  Future<Map<String, dynamic>> createReview(
-    Map<String, dynamic> reviewData,
-  ) =>
-      post(ApiEndpoints.reviews, body: reviewData)
-          as Future<Map<String, dynamic>>;
+  Future<Map<String, dynamic>> createReview(Map<String, dynamic> reviewData) async {
+    final result = await post(ApiEndpoints.reviews, body: reviewData);
+    return result as Map<String, dynamic>;
+  }
 
   Future<List<dynamic>> getReviews({Map<String, String>? filters}) async {
     final response = await get(ApiEndpoints.reviews, queryParams: filters);
     return response['data'] as List<dynamic>? ?? response as List<dynamic>;
   }
-
-  // --- Admin endpoints ---
-
-  Future<Map<String, dynamic>> getAdminDashboard() =>
-      get(ApiEndpoints.adminDashboard, isAdmin: true)
-          as Future<Map<String, dynamic>>;
-
-  Future<List<dynamic>> getAdminBookings({
-    Map<String, String>? filters,
-  }) async {
-    final response =
-        await get(ApiEndpoints.adminBookings, queryParams: filters, isAdmin: true);
-    return response['data'] as List<dynamic>? ?? response as List<dynamic>;
-  }
-
-  Future<Map<String, dynamic>> updateAdminBooking(
-    String id,
-    Map<String, dynamic> data,
-  ) =>
-      put(ApiEndpoints.adminBooking(id), body: data, isAdmin: true)
-          as Future<Map<String, dynamic>>;
-
-  Future<List<dynamic>> getAdminCustomers({
-    Map<String, String>? filters,
-  }) async {
-    final response =
-        await get(ApiEndpoints.adminCustomers, queryParams: filters, isAdmin: true);
-    return response['data'] as List<dynamic>? ?? response as List<dynamic>;
-  }
-
-  Future<Map<String, dynamic>> getAdminAnalytics() =>
-      get(ApiEndpoints.adminAnalytics, isAdmin: true)
-          as Future<Map<String, dynamic>>;
-
-  Future<Map<String, dynamic>> getFirebaseConfig() =>
-      get(ApiEndpoints.firebaseConfig) as Future<Map<String, dynamic>>;
-
-  Future<List<dynamic>> getAdminReviews({
-    Map<String, String>? filters,
-  }) async {
-    final response =
-        await get(ApiEndpoints.adminReviews, queryParams: filters, isAdmin: true);
-    return response['data'] as List<dynamic>? ?? response as List<dynamic>;
-  }
-
-  Future<Map<String, dynamic>> respondToReview(
-    String reviewId,
-    String response,
-  ) =>
-      put('${ApiEndpoints.adminReviews}/$reviewId', body: {
-        'adminResponse': response,
-      }, isAdmin: true) as Future<Map<String, dynamic>>;
 }

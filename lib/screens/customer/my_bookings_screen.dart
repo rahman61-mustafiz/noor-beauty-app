@@ -18,22 +18,13 @@ class MyBookingsScreen extends StatefulWidget {
   State<MyBookingsScreen> createState() => _MyBookingsScreenState();
 }
 
-class _MyBookingsScreenState extends State<MyBookingsScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _MyBookingsScreenState extends State<MyBookingsScreen> {
   String _statusFilter = 'all';
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadBookings());
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadBookings() async {
@@ -170,16 +161,6 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Bookings'),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: AppColors.primary,
-          labelColor: AppColors.primary,
-          unselectedLabelColor: AppColors.textSecondary,
-          tabs: const [
-            Tab(text: 'List'),
-            Tab(text: 'Calendar'),
-          ],
-        ),
         actions: [
           PopupMenuButton<String>(
             icon: const Icon(Icons.filter_list),
@@ -197,13 +178,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
       ),
       body: booking.isLoading
           ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildListView(bookings),
-                _buildCalendarView(booking.bookings),
-              ],
-            ),
+          : _buildListView(bookings),
     );
   }
 
@@ -245,20 +220,4 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
     );
   }
 
-  Widget _buildCalendarView(List<Booking> bookings) {
-    return TableCalendar(
-      firstDay: DateTime.now().subtract(const Duration(days: 365)),
-      lastDay: DateTime.now().add(const Duration(days: 365)),
-      focusedDay: DateTime.now(),
-      eventLoader: (day) => bookings
-          .where((b) => isSameDay(b.bookingDate, day))
-          .toList(),
-      calendarStyle: const CalendarStyle(
-        markerDecoration: BoxDecoration(
-          color: AppColors.accent,
-          shape: BoxShape.circle,
-        ),
-      ),
-    );
-  }
 }

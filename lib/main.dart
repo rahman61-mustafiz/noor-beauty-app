@@ -2,12 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import 'screens/admin/admin_dashboard_screen.dart';
-import 'screens/admin/admin_login_screen.dart';
-import 'screens/admin/admin_mfa_screen.dart';
-import 'screens/auth/email_verify_screen.dart';
-import 'screens/auth/login_screen.dart';
-import 'screens/auth/signup_screen.dart';
+import 'screens/auth/phone_login_screen.dart';
+import 'screens/auth/otp_verify_screen.dart';
+import 'screens/auth/name_setup_screen.dart';
 import 'screens/customer/home_screen.dart';
 import 'services/auth_service.dart';
 import 'services/booking_service.dart';
@@ -65,36 +62,24 @@ class NoorBeautyApp extends StatelessWidget {
         themeMode: ThemeMode.dark,
         builder: (context, child) =>
             AppTheme.applyFontFamily(context, child ?? const SizedBox.shrink()),
-        initialRoute: _getInitialRoute(),
+        initialRoute: authService.isLoggedIn ? '/home' : '/phone-login',
         onGenerateRoute: _generateRoute,
       ),
     );
   }
 
-  String _getInitialRoute() {
-    if (authService.isAdminLoggedIn) return '/admin-dashboard';
-    if (authService.isLoggedIn) return '/home';
-    return '/login';
-  }
-
   Route<dynamic>? _generateRoute(RouteSettings settings) {
     switch (settings.name) {
-      case '/login':
-        return _pageRoute(const LoginScreen(), settings);
-      case '/signup':
-        return _pageRoute(const SignupScreen(), settings);
-      case '/verify-email':
-        return _pageRoute(const EmailVerifyScreen(), settings);
+      case '/phone-login':
+        return _pageRoute(const PhoneLoginScreen(), settings);
+      case '/otp-verify':
+        return _pageRoute(const OtpVerifyScreen(), settings);
+      case '/name-setup':
+        return _pageRoute(const NameSetupScreen(), settings);
       case '/home':
         return _pageRoute(const HomeScreen(), settings);
-      case '/admin-login':
-        return _pageRoute(const AdminLoginScreen(), settings);
-      case '/admin-mfa':
-        return _pageRoute(const AdminMfaScreen(), settings);
-      case '/admin-dashboard':
-        return _pageRoute(const AdminDashboardScreen(), settings);
       default:
-        return _pageRoute(const LoginScreen(), settings);
+        return _pageRoute(const PhoneLoginScreen(), settings);
     }
   }
 
@@ -111,5 +96,4 @@ class NoorBeautyApp extends StatelessWidget {
       transitionDuration: const Duration(milliseconds: 300),
     );
   }
-
 }

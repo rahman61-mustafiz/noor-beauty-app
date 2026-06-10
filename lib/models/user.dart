@@ -1,19 +1,19 @@
 class User {
   final String id;
   final String name;
-  final String email;
+  final String? email;
   final String phone;
   final String? profilePic;
-  final bool emailVerified;
+  final bool isBanned;
   final DateTime createdAt;
 
   const User({
     required this.id,
     required this.name,
-    required this.email,
+    this.email,
     required this.phone,
     this.profilePic,
-    this.emailVerified = false,
+    this.isBanned = false,
     required this.createdAt,
   });
 
@@ -21,10 +21,10 @@ class User {
     return User(
       id: json['id']?.toString() ?? '',
       name: json['name'] as String? ?? '',
-      email: json['email'] as String? ?? '',
+      email: json['email'] as String?,
       phone: json['phone'] as String? ?? '',
       profilePic: json['profilePic'] as String?,
-      emailVerified: json['emailVerified'] as bool? ?? false,
+      isBanned: json['isBanned'] as bool? ?? false,
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'] as String)
           : DateTime.now(),
@@ -37,7 +37,7 @@ class User {
         'email': email,
         'phone': phone,
         'profilePic': profilePic,
-        'emailVerified': emailVerified,
+        'isBanned': isBanned,
         'createdAt': createdAt.toIso8601String(),
       };
 
@@ -47,7 +47,7 @@ class User {
     String? email,
     String? phone,
     String? profilePic,
-    bool? emailVerified,
+    bool? isBanned,
     DateTime? createdAt,
   }) {
     return User(
@@ -56,7 +56,7 @@ class User {
       email: email ?? this.email,
       phone: phone ?? this.phone,
       profilePic: profilePic ?? this.profilePic,
-      emailVerified: emailVerified ?? this.emailVerified,
+      isBanned: isBanned ?? this.isBanned,
       createdAt: createdAt ?? this.createdAt,
     );
   }

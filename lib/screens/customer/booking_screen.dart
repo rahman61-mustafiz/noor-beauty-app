@@ -1,348 +1,528 @@
+import 'dart:math';
+
+import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 import '../../models/service.dart';
-import '../../models/stylist.dart';
 import '../../services/auth_service.dart';
 import '../../services/booking_service.dart';
 import '../../services/notification_service.dart';
 import '../../utils/colors.dart';
 import '../../widgets/custom_button.dart';
-import '../../widgets/stylist_card.dart';
 
+/// Simplified booking: pick date & time → confirm with price.
+/// Stylist is assigned by the salon, no user choice required.
 class BookingScreen extends StatefulWidget {
   final SalonService? preselectedService;
+  final ServiceSubOption? preselectedSubOption;
 
-  const BookingScreen({super.key, this.preselectedService});
+  const BookingScreen({
+    super.key,
+    this.preselectedService,
+    this.preselectedSubOption,
+  });
 
   @override
   State<BookingScreen> createState() => _BookingScreenState();
 }
 
 class _BookingScreenState extends State<BookingScreen> {
-  int _currentStep = 0;
-  SalonService? _selectedService;
-  int _selectedDuration = 60;
-  int? _customDuration;
-  Stylist? _selectedStylist;
-  DateTime _selectedDate = DateTime.now().add(const Duration(days: 1));
-  String? _selectedTime;
-  final _notesController = TextEditingController();
-  final _customDurationController = TextEditingController();
+  // step 0 = service+option selection (only when not preselected)
+  // step 1 = date & time
+  // step 2 = confirm
+  late int _step;
+
+  SalonService? _service;
+  ServiceSubOption? _subOption;
+  DateTime _date = DateTime.now().add(const Duration(days: 1));
+  String? _time;
+  bool _isBooked = false;
+  late ConfettiController _confettiController;
+  final _notesCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _selectedService = widget.preselectedService;
-    if (_selectedService != null) {
-      _selectedDuration = _selectedService!.baseDurationMin;
-    }
+    _service = widget.preselectedService;
+    _subOption = widget.preselectedSubOption;
+    _step = (_service != null) ? 1 : 0;
+    _confettiController = ConfettiController(duration: const Duration(seconds: 4));
   }
 
   @override
   void dispose() {
-    _notesController.dispose();
-    _customDurationController.dispose();
+    _notesCtrl.dispose();
+    _confettiController.dispose();
     super.dispose();
   }
 
-  int get _effectiveDuration =>
-      _selectedDuration == -1 ? (_customDuration ?? 60) : _selectedDuration;
+  int get _duration => _subOption?.durationMin ?? _service?.baseDurationMin ?? 60;
+  int get _price    => _subOption?.price ?? _service?.startingPrice ?? 0;
 
-  List<Stylist> get _availableStylists {
-    if (_selectedService == null) return [];
-    return context
-        .read<BookingService>()
-        .getStylistsForService(_selectedService!.name);
+  List<String> get _timeSlots =>
+      context.read<BookingService>().getAvailableTimeSlots(date: _date, durationMinutes: _duration, openTime: '11:00');
+
+  bool get _canProceed {
+    if (_step == 0) return _service != null;
+    if (_step == 1) return _time != null;
+    return true;
   }
 
-  List<String> get _timeSlots {
-    return context.read<BookingService>().getAvailableTimeSlots(
-          date: _selectedDate,
-          durationMinutes: _effectiveDuration,
-        );
-  }
+  Future<void> _confirm() async {
+    final auth    = context.read<AuthService>();
+    final booking = context.read<BookingService>();
+    if (_service == null || _time == null) return;
 
-  Future<void> _confirmBooking() async {
-    final auth = context.read<AuthService>();
-    final bookingService = context.read<BookingService>();
-
-    if (auth.currentUser == null ||
-        _selectedService == null ||
-        _selectedStylist == null ||
-        _selectedTime == null) {
-      return;
-    }
-
-    final booking = await bookingService.createBooking(
-      customerId: auth.currentUser!.id,
-      stylistId: _selectedStylist!.id,
-      serviceId: _selectedService!.id,
-      bookingDate: _selectedDate,
-      startTime: _selectedTime!,
-      durationMinutes: _effectiveDuration,
-      notes: _notesController.text.trim().isEmpty
-          ? null
-          : _notesController.text.trim(),
+    final result = await booking.createBooking(
+      customerId:      auth.currentUser?.id ?? 'guest',
+      stylistId:       '',   // assigned by salon
+      serviceId:       _service!.id,
+      bookingDate:     _date,
+      startTime:       _time!,
+      durationMinutes: _duration,
+      notes: [
+        if (_subOption != null) _subOption!.name,
+        if (_notesCtrl.text.trim().isNotEmpty) _notesCtrl.text.trim(),
+      ].join(' — ').isEmpty ? null : [
+        if (_subOption != null) _subOption!.name,
+        if (_notesCtrl.text.trim().isNotEmpty) _notesCtrl.text.trim(),
+      ].join(' — '),
     );
 
     if (!mounted) return;
 
-    if (booking != null) {
-      final dateStr = DateFormat('MMM d, yyyy').format(_selectedDate);
-      await NotificationService.instance.showBookingConfirmation(
-        serviceName: _selectedService!.name,
-        date: dateStr,
-        time: _selectedTime!,
-      );
-
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Row(
-            children: [
-              Icon(Icons.check_circle, color: AppColors.success),
-              SizedBox(width: 8),
-              Text('Booking Confirmed!'),
-            ],
-          ),
-          content: Text(
-            'Your ${_selectedService!.name} appointment with ${_selectedStylist!.name} '
-            'on $dateStr at $_selectedTime has been booked.\n\n'
-            'Payment: Cash at salon',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                Navigator.pop(context);
-              },
-              child: const Text('Done'),
-            ),
-          ],
-        ),
-      );
+    if (result != null) {
+      try {
+        final dateStr = DateFormat('MMM d, yyyy').format(_date);
+        await NotificationService.instance.showBookingConfirmation(
+          serviceName: _service!.name,
+          date: dateStr,
+          time: _time!,
+        );
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() => _isBooked = true);
+      _confettiController.play();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(bookingService.error ?? 'Booking failed'),
+          content: Text(booking.error ?? 'Booking failed. Please try again.'),
           backgroundColor: AppColors.error,
         ),
       );
     }
   }
 
+  Widget _confettiCannon({required Alignment alignment, required double angle}) {
+    return Align(
+      alignment: alignment,
+      child: ConfettiWidget(
+        confettiController: _confettiController,
+        blastDirection: angle,
+        numberOfParticles: 18,
+        maxBlastForce: 30,
+        minBlastForce: 10,
+        emissionFrequency: 0.04,
+        gravity: 0.1,
+        shouldLoop: false,
+        colors: const [
+          Color(0xFFD4AF37),
+          Color(0xFFFF6B9D),
+          Color(0xFF74B9FF),
+          Color(0xFFFD79A8),
+          Color(0xFF55EFC4),
+          Color(0xFFFDCB6E),
+          Color(0xFFE17055),
+          Color(0xFFA29BFE),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final booking = context.watch<BookingService>();
+    if (_isBooked) {
+      return Scaffold(
+        body: Stack(
+          children: [
+            _buildSuccessView(),
+            _confettiCannon(alignment: Alignment.topLeft, angle: pi / 3.5),
+            _confettiCannon(alignment: Alignment.topRight, angle: pi - pi / 3.5),
+            _confettiCannon(alignment: Alignment.topCenter, angle: pi / 2),
+          ],
+        ),
+      );
+    }
+
+    final stepCount = _service != null && widget.preselectedService != null ? 2 : 3;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Book Appointment'),
-      ),
+      appBar: AppBar(title: const Text('Book Appointment')),
       body: Column(
         children: [
-          _buildStepIndicator(),
-          Expanded(
-            child: Stepper(
-              currentStep: _currentStep,
-              onStepContinue: _canContinue() ? _nextStep : null,
-              onStepCancel: _currentStep > 0 ? _prevStep : null,
-              controlsBuilder: (context, details) => const SizedBox.shrink(),
-              steps: [
-                Step(
-                  title: const Text('Service'),
-                  isActive: _currentStep >= 0,
-                  state: _currentStep > 0 ? StepState.complete : StepState.indexed,
-                  content: _buildServiceStep(booking),
-                ),
-                Step(
-                  title: const Text('Duration'),
-                  isActive: _currentStep >= 1,
-                  state: _currentStep > 1 ? StepState.complete : StepState.indexed,
-                  content: _buildDurationStep(),
-                ),
-                Step(
-                  title: const Text('Stylist'),
-                  isActive: _currentStep >= 2,
-                  state: _currentStep > 2 ? StepState.complete : StepState.indexed,
-                  content: _buildStylistStep(),
-                ),
-                Step(
-                  title: const Text('Date & Time'),
-                  isActive: _currentStep >= 3,
-                  state: _currentStep > 3 ? StepState.complete : StepState.indexed,
-                  content: _buildDateTimeStep(),
-                ),
-                Step(
-                  title: const Text('Confirm'),
-                  isActive: _currentStep >= 4,
-                  content: _buildConfirmStep(),
-                ),
-              ],
+          // Progress bar
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: Row(
+              children: List.generate(stepCount, (i) {
+                final active = i <= (_service != null ? _step - 1 : _step);
+                return Expanded(
+                  child: Container(
+                    height: 4,
+                    margin: EdgeInsets.only(right: i < stepCount - 1 ? 6 : 0),
+                    decoration: BoxDecoration(
+                      color: active ? AppColors.primary : AppColors.divider,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                );
+              }),
             ),
           ),
+
+          Expanded(
+            child: SingleChildScrollView(
+              key: ValueKey(_step),
+              padding: const EdgeInsets.all(20),
+              child: _step == 0
+                  ? _buildServiceStep()
+                  : _step == 1
+                      ? _buildDateTimeStep()
+                      : _buildConfirmStep(),
+            ),
+          ),
+
           _buildBottomBar(),
         ],
       ),
     );
   }
 
-  Widget _buildStepIndicator() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
-      color: AppColors.primary.withValues(alpha: 0.08),
-      child: Row(
-        children: List.generate(5, (i) {
-          return Expanded(
-            child: Container(
-              height: 4,
-              margin: EdgeInsets.only(right: i < 4 ? 4 : 0),
+  // ── Success view (after booking confirmed) ───────────────────────────────
+
+  Widget _buildSuccessView() {
+    final dateStr = DateFormat('EEEE, MMMM d, yyyy').format(_date);
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const SizedBox(height: 52),
+            Container(
+              padding: const EdgeInsets.all(22),
               decoration: BoxDecoration(
-                color: i <= _currentStep ? AppColors.primary : AppColors.divider,
-                borderRadius: BorderRadius.circular(2),
+                color: AppColors.success.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check_circle_rounded, color: AppColors.success, size: 80),
+            ),
+            const SizedBox(height: 22),
+            const Text(
+              'Booking Confirmed!',
+              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Your appointment is all set. See you soon!',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 15),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 28),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.cardBorder),
+              ),
+              child: Column(
+                children: [
+                  _row('Service', _subOption?.name ?? _service?.name ?? '—'),
+                  _row('Date', dateStr),
+                  _row('Time', _time ?? '—'),
+                  _row('Duration', '$_duration min'),
+                  const Divider(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Estimated Price',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      Text('৳$_price',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                              fontSize: 18)),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Icon(Icons.payments_outlined,
+                          size: 16, color: AppColors.accent),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Any mode of payment accepted at salon',
+                          style: TextStyle(
+                              fontSize: 12, color: AppColors.textSecondary),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-          );
-        }),
+            const SizedBox(height: 28),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text('Done',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildServiceStep(BookingService booking) {
-    return Column(
-      children: booking.services.map((service) {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: ListTile(
-            leading: Icon(service.iconData, color: AppColors.primary),
-            title: Text(service.name),
-            subtitle: Text('${service.baseDurationMin}–${service.baseDurationMax} min'),
-            selected: _selectedService?.id == service.id,
-            selectedTileColor: AppColors.primary.withValues(alpha: 0.1),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            onTap: () => setState(() {
-              _selectedService = service;
-              _selectedDuration = service.baseDurationMin;
-              _selectedStylist = null;
-            }),
-          ),
-        );
-      }).toList(),
-    );
-  }
+  // ── Step 0: Service & sub-option ─────────────────────────────────────────
 
-  Widget _buildDurationStep() {
-    const options = [
-      (30, '30 minutes'),
-      (60, '1 hour'),
-      (120, '2 hours'),
-      (-1, 'Custom'),
-    ];
-
+  Widget _buildServiceStep() {
+    final services = context.read<BookingService>().services;
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ...options.map((opt) {
-          return RadioListTile<int>(
-            title: Text(opt.$2),
-            value: opt.$1,
-            groupValue: _selectedDuration,
-            activeColor: AppColors.primary,
-            onChanged: (v) => setState(() => _selectedDuration = v!),
+        const Text('Choose a Service', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 16),
+        ...services.map((svc) {
+          final selected = _service?.id == svc.id;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: GestureDetector(
+              onTap: () => setState(() { _service = svc; _subOption = null; }),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: selected ? AppColors.primary.withValues(alpha: 0.12) : AppColors.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: selected ? AppColors.primary : AppColors.cardBorder, width: selected ? 2 : 1),
+                ),
+                child: Row(
+                  children: [
+                    Icon(svc.iconData, color: selected ? AppColors.primary : AppColors.textSecondary, size: 22),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(svc.name, style: TextStyle(fontWeight: FontWeight.w600, color: selected ? AppColors.primary : AppColors.textPrimary)),
+                          Text('${svc.subOptions.length} options · From ৳${svc.startingPrice}',
+                              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                        ],
+                      ),
+                    ),
+                    if (selected) const Icon(Icons.check_circle, color: AppColors.primary, size: 20),
+                  ],
+                ),
+              ),
+            ),
           );
         }),
-        if (_selectedDuration == -1)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: TextField(
-              controller: _customDurationController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Custom duration (minutes)',
-                border: OutlineInputBorder(),
+        if (_service != null && _service!.subOptions.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          Text('Choose a Package', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+          const SizedBox(height: 10),
+          ..._service!.subOptions.map((opt) {
+            final sel = _subOption?.name == opt.name;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: GestureDetector(
+                onTap: () => setState(() => _subOption = opt),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: sel ? AppColors.primary.withValues(alpha: 0.1) : AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: sel ? AppColors.primary : AppColors.cardBorder, width: sel ? 2 : 1),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(opt.name, style: TextStyle(fontWeight: sel ? FontWeight.w600 : FontWeight.normal)),
+                            Text('${opt.durationMin} min', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                          ],
+                        ),
+                      ),
+                      Text('৳${opt.price}', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary)),
+                      if (sel) ...[const SizedBox(width: 8), const Icon(Icons.check_circle, color: AppColors.primary, size: 18)],
+                    ],
+                  ),
+                ),
               ),
-              onChanged: (v) =>
-                  setState(() => _customDuration = int.tryParse(v)),
-            ),
-          ),
+            );
+          }),
+        ],
       ],
     );
   }
 
-  Widget _buildStylistStep() {
-    final stylists = _availableStylists;
-    if (stylists.isEmpty) {
-      return const Text('No stylists available for this service.');
-    }
-
-    return SizedBox(
-      height: 200,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: stylists.length,
-        itemBuilder: (context, index) {
-          final stylist = stylists[index];
-          return StylistCard(
-            stylist: stylist,
-            isSelected: _selectedStylist?.id == stylist.id,
-            onTap: () => setState(() => _selectedStylist = stylist),
-          );
-        },
-      ),
-    );
-  }
+  // ── Step 1: Date & time ──────────────────────────────────────────────────
 
   Widget _buildDateTimeStep() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        TableCalendar(
-          firstDay: DateTime.now(),
-          lastDay: DateTime.now().add(const Duration(days: 90)),
-          focusedDay: _selectedDate,
-          selectedDayPredicate: (day) => isSameDay(_selectedDate, day),
-          onDaySelected: (selected, _) =>
-              setState(() => _selectedDate = selected),
-          calendarStyle: const CalendarStyle(
-            selectedDecoration: BoxDecoration(
-              color: AppColors.primary,
-              shape: BoxShape.circle,
+        // Service summary chip
+        if (_service != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
             ),
-            todayDecoration: BoxDecoration(
-              color: AppColors.accent,
-              shape: BoxShape.circle,
+            child: Row(
+              children: [
+                Icon(_service!.iconData, color: AppColors.primary, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(_service!.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      if (_subOption != null)
+                        Text(_subOption!.name, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                    ],
+                  ),
+                ),
+                Text('৳$_price', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary)),
+              ],
             ),
           ),
-          headerStyle: const HeaderStyle(
-            formatButtonVisible: false,
-            titleCentered: true,
+
+        const Text('Select Date & Time', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        // Compact horizontal date strip — next 60 days
+        SizedBox(
+          height: 78,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: 60,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, i) {
+              final d = DateTime.now().add(Duration(days: i + 1));
+              final sel = isSameDay(_date, d);
+              return InkWell(
+                onTap: () => setState(() { _date = d; _time = null; }),
+                borderRadius: BorderRadius.circular(14),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 54,
+                  decoration: BoxDecoration(
+                    color: sel ? AppColors.primary : AppColors.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: sel ? AppColors.primary : AppColors.cardBorder,
+                      width: sel ? 2 : 1,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        DateFormat('EEE').format(d).toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: sel ? Colors.black : AppColors.textSecondary,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${d.day}',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: sel ? Colors.black : AppColors.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        DateFormat('MMM').format(d),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: sel ? Colors.black87 : AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
         ),
-        const SizedBox(height: 16),
-        const Text('Available Times', style: TextStyle(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
+        const SizedBox(height: 20),
+        // Selected date display
+        if (true)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.calendar_today_outlined, size: 16, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Text(
+                  DateFormat('EEEE, MMMM d, yyyy').format(_date),
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: AppColors.primary),
+                ),
+              ],
+            ),
+          ),
+        const Text('Select Time', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 10),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: 8, runSpacing: 8,
           children: _timeSlots.map((slot) {
-            final isSelected = _selectedTime == slot;
+            final sel = _time == slot;
             return ChoiceChip(
               label: Text(slot),
-              selected: isSelected,
+              selected: sel,
               selectedColor: AppColors.primary,
-              labelStyle: TextStyle(
-                color: isSelected ? AppColors.secondary : AppColors.textPrimary,
-              ),
-              onSelected: (_) => setState(() => _selectedTime = slot),
+              labelStyle: TextStyle(color: sel ? AppColors.secondary : AppColors.textPrimary),
+              onSelected: (_) => setState(() => _time = slot),
             );
           }).toList(),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
         TextField(
-          controller: _notesController,
+          controller: _notesCtrl,
           maxLines: 2,
           decoration: const InputDecoration(
             labelText: 'Notes (optional)',
@@ -353,123 +533,108 @@ class _BookingScreenState extends State<BookingScreen> {
     );
   }
 
+  // ── Step 2: Confirm ──────────────────────────────────────────────────────
+
   Widget _buildConfirmStep() {
-    if (_selectedService == null || _selectedStylist == null || _selectedTime == null) {
-      return const Text('Please complete all previous steps.');
-    }
-
-    final dateStr = DateFormat('EEEE, MMM d, yyyy').format(_selectedDate);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.cardBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _summaryRow('Service', _selectedService!.name),
-          _summaryRow('Duration', '$_effectiveDuration min'),
-          _summaryRow('Stylist', _selectedStylist!.name),
-          _summaryRow('Date', dateStr),
-          _summaryRow('Time', _selectedTime!),
-          if (_notesController.text.isNotEmpty)
-            _summaryRow('Notes', _notesController.text),
-          const Divider(),
-          const Row(
+    final dateStr = DateFormat('EEEE, MMM d, yyyy').format(_date);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Confirm Booking', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.cardBorder),
+          ),
+          child: Column(
             children: [
-              Icon(Icons.payments_outlined, size: 18, color: AppColors.accent),
-              SizedBox(width: 8),
-              Text('Pay cash at the salon', style: TextStyle(fontWeight: FontWeight.w500)),
+              _row('Service',  _service?.name ?? '—'),
+              if (_subOption != null) _row('Package', _subOption!.name),
+              _row('Duration', '$_duration min'),
+              _row('Date',     dateStr),
+              _row('Time',     _time ?? '—'),
+              if (_notesCtrl.text.trim().isNotEmpty)
+                _row('Notes', _notesCtrl.text.trim()),
+              const Divider(height: 24),
+              // Price highlight
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Estimated Price', style: TextStyle(fontWeight: FontWeight.w600)),
+                    Text('৳$_price', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary, fontSize: 18)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Icon(Icons.payments_outlined, size: 18, color: AppColors.accent),
+                  const SizedBox(width: 8),
+                  const Expanded(child: Text('Any mode of payment accepted at salon', style: TextStyle(fontSize: 13))),
+                ],
+              ),
             ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  Widget _summaryRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(label, style: const TextStyle(color: AppColors.textSecondary)),
-          ),
-          Expanded(
-            child: Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _row(String label, String value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: 80, child: Text(label, style: const TextStyle(color: AppColors.textSecondary))),
+            Expanded(child: Text(value, style: const TextStyle(fontWeight: FontWeight.w500))),
+          ],
+        ),
+      );
+
+  // ── Bottom bar ───────────────────────────────────────────────────────────
 
   Widget _buildBottomBar() {
+    final isLast = _step == 2;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Theme.of(context).scaffoldBackgroundColor,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, -2))],
       ),
       child: Row(
         children: [
-          if (_currentStep > 0)
+          if (_step > 0) ...[
             Expanded(
               child: CustomButton(
                 label: 'Back',
                 variant: ButtonVariant.outline,
-                onPressed: _prevStep,
+                onPressed: () => setState(() => _step--),
               ),
             ),
-          if (_currentStep > 0) const SizedBox(width: 12),
+            const SizedBox(width: 12),
+          ],
           Expanded(
             flex: 2,
             child: CustomButton(
-              label: _currentStep == 4 ? 'Confirm Booking' : 'Continue',
-              isLoading: _currentStep == 4 && context.watch<BookingService>().isLoading,
-              onPressed: _canContinue()
-                  ? (_currentStep == 4 ? _confirmBooking : _nextStep)
+              label: isLast ? 'Confirm Booking' : 'Continue',
+              isLoading: isLast && context.watch<BookingService>().isLoading,
+              onPressed: _canProceed
+                  ? (isLast ? _confirm : () => setState(() => _step++))
                   : null,
             ),
           ),
         ],
       ),
     );
-  }
-
-  bool _canContinue() {
-    switch (_currentStep) {
-      case 0:
-        return _selectedService != null;
-      case 1:
-        return _selectedDuration != -1 ||
-            (_customDuration != null && _customDuration! > 0);
-      case 2:
-        return _selectedStylist != null;
-      case 3:
-        return _selectedTime != null;
-      case 4:
-        return true;
-      default:
-        return false;
-    }
-  }
-
-  void _nextStep() {
-    if (_currentStep < 4) setState(() => _currentStep++);
-  }
-
-  void _prevStep() {
-    if (_currentStep > 0) setState(() => _currentStep--);
   }
 }

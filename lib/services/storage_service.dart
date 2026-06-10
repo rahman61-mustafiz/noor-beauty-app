@@ -4,8 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/constants.dart';
 
-/// Secure local storage wrapper using SharedPreferences.
-/// Tokens and sensitive data are stored with prefixed keys.
 class StorageService {
   static StorageService? _instance;
   late SharedPreferences _prefs;
@@ -35,55 +33,24 @@ class StorageService {
 
   String? getRefreshToken() => _prefs.getString(StorageKeys.refreshToken);
 
-  Future<void> saveAdminToken(String token) async {
-    await _prefs.setString(StorageKeys.adminToken, token);
-  }
-
-  String? getAdminToken() => _prefs.getString(StorageKeys.adminToken);
-
   // --- User data ---
 
   Future<void> saveUserData({
     required String userId,
     required String name,
-    required String email,
+    String? phone,
+    String? email,
   }) async {
     await _prefs.setString(StorageKeys.userId, userId);
     await _prefs.setString(StorageKeys.userName, name);
-    await _prefs.setString(StorageKeys.userEmail, email);
+    if (phone != null) await _prefs.setString('user_phone', phone);
+    if (email != null) await _prefs.setString(StorageKeys.userEmail, email);
   }
 
-  String? getUserId() => _prefs.getString(StorageKeys.userId);
-  String? getUserName() => _prefs.getString(StorageKeys.userName);
+  String? getUserId()    => _prefs.getString(StorageKeys.userId);
+  String? getUserName()  => _prefs.getString(StorageKeys.userName);
+  String? getUserPhone() => _prefs.getString('user_phone');
   String? getUserEmail() => _prefs.getString(StorageKeys.userEmail);
-
-  Future<void> setIsAdmin(bool value) async {
-    await _prefs.setBool(StorageKeys.isAdmin, value);
-  }
-
-  bool getIsAdmin() => _prefs.getBool(StorageKeys.isAdmin) ?? false;
-
-  // --- Admin session ---
-
-  Future<void> updateAdminLastActivity() async {
-    await _prefs.setString(
-      StorageKeys.adminLastActivity,
-      DateTime.now().toIso8601String(),
-    );
-  }
-
-  DateTime? getAdminLastActivity() {
-    final value = _prefs.getString(StorageKeys.adminLastActivity);
-    if (value == null) return null;
-    return DateTime.tryParse(value);
-  }
-
-  bool isAdminSessionExpired() {
-    final lastActivity = getAdminLastActivity();
-    if (lastActivity == null) return true;
-    final elapsed = DateTime.now().difference(lastActivity);
-    return elapsed.inMinutes >= AppConstants.adminSessionTimeoutMinutes;
-  }
 
   // --- Favorites ---
 
@@ -125,7 +92,7 @@ class StorageService {
 
   bool getDarkMode() => _prefs.getBool(StorageKeys.darkMode) ?? false;
 
-  // --- Generic JSON storage ---
+  // --- Generic JSON ---
 
   Future<void> saveJson(String key, Map<String, dynamic> data) async {
     await _prefs.setString(key, jsonEncode(data));
@@ -145,13 +112,6 @@ class StorageService {
     await _prefs.remove(StorageKeys.userId);
     await _prefs.remove(StorageKeys.userName);
     await _prefs.remove(StorageKeys.userEmail);
-    await _prefs.setBool(StorageKeys.isAdmin, false);
-  }
-
-  Future<void> clearAdminSession() async {
-    await _prefs.remove(StorageKeys.adminToken);
-    await _prefs.remove(StorageKeys.adminLastActivity);
-    await _prefs.setBool(StorageKeys.isAdmin, false);
   }
 
   Future<void> clearAll() async {
@@ -159,5 +119,4 @@ class StorageService {
   }
 
   bool get isLoggedIn => getAccessToken() != null;
-  bool get isAdminLoggedIn => getAdminToken() != null && !isAdminSessionExpired();
 }

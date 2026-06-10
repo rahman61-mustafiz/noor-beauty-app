@@ -6,11 +6,116 @@ import '../../services/auth_service.dart';
 import '../../services/booking_service.dart';
 import '../../utils/colors.dart';
 import '../../utils/constants.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../services/api_service.dart';
+
 import '../../widgets/service_card.dart';
 import 'booking_screen.dart';
 import 'my_bookings_screen.dart';
 import 'profile_screen.dart';
 import 'services_screen.dart';
+
+// ---------------------------------------------------------------------------
+// Social / contact constants
+// ---------------------------------------------------------------------------
+
+const _kFbUrl    = 'https://www.facebook.com/noorbeautysalondhk';
+const _kIgUrl    = 'https://www.instagram.com/noor_beauty_salon1/';
+const _kWaUrl    = 'https://wa.me/8801711726728';
+const _kPhoneUrl = 'tel:+8801711726728';
+
+Future<void> _launchUrl(String url) async {
+  final uri = Uri.parse(url);
+  if (await canLaunchUrl(uri)) {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Gallery placeholder items (replace imagePath with real asset once photos arrive)
+// ---------------------------------------------------------------------------
+
+class _GalleryItem {
+  final String label;
+  final IconData icon;
+  final List<Color> gradient;
+  final String? imagePath; // set to 'assets/images/gallery_X.jpg' when ready
+  const _GalleryItem(this.label, this.icon, this.gradient, [this.imagePath]);
+}
+
+const _kGallery = <_GalleryItem>[
+  _GalleryItem('Hair Styling',  Icons.content_cut,               [Color(0xFF3D1A00), Color(0xFF7B3F00)], 'assets/images/gallery_1.jpg'),
+  _GalleryItem('Bridal Look',   Icons.favorite,                   [Color(0xFF4A1A40), Color(0xFF8B3070)], 'assets/images/gallery_2.jpg'),
+  _GalleryItem('Nail Art',      Icons.back_hand_outlined,         [Color(0xFF4A0010), Color(0xFF9B1B30)]),
+  _GalleryItem('Spa & Relax',   Icons.spa,                        [Color(0xFF0A2A1A), Color(0xFF1B5E40)]),
+  _GalleryItem('Facial Glow',   Icons.face_retouching_natural,    [Color(0xFF3A2800), Color(0xFF8B6914)]),
+  _GalleryItem('Mehedi Art',    Icons.brush_outlined,             [Color(0xFF2A0A00), Color(0xFF7B3010)]),
+];
+
+// ---------------------------------------------------------------------------
+// Mock reviews
+// ---------------------------------------------------------------------------
+
+class _Review {
+  final String name;
+  final int rating;
+  final String text;
+  const _Review(this.name, this.rating, this.text);
+}
+
+const _kReviews = <_Review>[
+  _Review('Ayesha K.', 5, 'Amazing bridal package! The makeup and styling were flawless for my wedding day.'),
+  _Review('Tania M.', 5, 'Love the haircut and color. Very professional and friendly staff. Will come again!'),
+  _Review('Sabina R.', 4, 'Great facial treatment. My skin feels amazing. Highly recommend the spa package.'),
+  _Review('Nadia H.', 5, 'Best mehedi artist in Dhaka! Beautiful designs for our family wedding event.'),
+  _Review('Mim A.', 5, 'The mani-pedi service is top notch. Clean, relaxing, and stunning nail art.'),
+];
+
+// ---------------------------------------------------------------------------
+// Category definitions
+// ---------------------------------------------------------------------------
+
+class _Cat {
+  final String label;
+  final IconData icon;
+  final String filter;
+  const _Cat(this.label, this.icon, this.filter);
+}
+
+const _kAllFilter = '';
+final _kCategories = <_Cat>[
+  _Cat('All', Icons.grid_view_rounded, _kAllFilter),
+  _Cat('Hair', Icons.content_cut, 'hair'),
+  _Cat('Nails', Icons.back_hand_outlined, 'nails'),
+  _Cat('Facial', Icons.face_retouching_natural, 'facial'),
+  _Cat('Bridal', Icons.favorite_border, 'bridal'),
+  _Cat('Spa', Icons.spa_outlined, 'spa'),
+];
+
+List<SalonService> _applyFilter(List<SalonService> all, String filter) {
+  if (filter.isEmpty) return all.take(4).toList();
+  return all.where((s) {
+    final n = s.name.toLowerCase();
+    switch (filter) {
+      case 'hair':
+        return n.contains('hair') || n == 'styling' || n == 'color';
+      case 'nails':
+        return n.contains('mani');
+      case 'facial':
+        return n.contains('facial');
+      case 'bridal':
+        return n.contains('bridal') || n.contains('mehedi');
+      case 'spa':
+        return n.contains('spa') || n.contains('wax');
+      default:
+        return true;
+    }
+  }).toList();
+}
+
+// ---------------------------------------------------------------------------
+// HomeScreen (tab shell)
+// ---------------------------------------------------------------------------
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,6 +126,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
+  String _serviceFilter = '';
 
   @override
   void initState() {
@@ -32,11 +138,20 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  void _goTo(int index) => setState(() => _currentIndex = index);
+
+  void _goToServicesWithFilter(String filter) {
+    setState(() {
+      _currentIndex = 1;
+      _serviceFilter = filter;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
-      const _HomeTab(),
-      const ServicesScreen(),
+      _HomeTab(onNavigate: _goTo, onCategoryTap: _goToServicesWithFilter),
+      ServicesScreen(categoryFilter: _serviceFilter),
       const MyBookingsScreen(),
       const ProfileScreen(),
     ];
@@ -45,58 +160,435 @@ class _HomeScreenState extends State<HomeScreen> {
       body: pages[_currentIndex],
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-        onDestinationSelected: (i) => setState(() => _currentIndex = i),
+        onDestinationSelected: _goTo,
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
-          NavigationDestination(icon: Icon(Icons.spa_outlined), selectedIcon: Icon(Icons.spa), label: 'Services'),
-          NavigationDestination(icon: Icon(Icons.calendar_month_outlined), selectedIcon: Icon(Icons.calendar_month), label: 'Bookings'),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Profile'),
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.spa_outlined),
+            selectedIcon: Icon(Icons.spa),
+            label: 'Services',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.calendar_month_outlined),
+            selectedIcon: Icon(Icons.calendar_month),
+            label: 'Bookings',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: 'Profile',
+          ),
         ],
       ),
     );
   }
 }
 
-class _HomeTab extends StatelessWidget {
-  const _HomeTab();
+// ---------------------------------------------------------------------------
+// Home tab
+// ---------------------------------------------------------------------------
+
+class _HomeTab extends StatefulWidget {
+  final void Function(int) onNavigate;
+  final void Function(String filter) onCategoryTap;
+
+  const _HomeTab({required this.onNavigate, required this.onCategoryTap});
+
+  @override
+  State<_HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<_HomeTab> {
+  String _selectedFilter = _kAllFilter;
+
+  void _showNotifications() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.35,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (_, controller) => Column(
+          children: [
+            const SizedBox(height: 12),
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Row(
+                children: [
+                  Icon(Icons.notifications_outlined),
+                  SizedBox(width: 10),
+                  Text('Notifications',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView(
+                controller: controller,
+                children: const [
+                  SizedBox(height: 60),
+                  Center(
+                    child: Column(
+                      children: [
+                        Icon(Icons.notifications_none_outlined,
+                            size: 56, color: Colors.grey),
+                        SizedBox(height: 12),
+                        Text("You're all caught up!",
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                        SizedBox(height: 6),
+                        Text('No new notifications',
+                            style: TextStyle(color: Colors.grey, fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String get _categoryLabel =>
+      _kCategories.firstWhere((c) => c.filter == _selectedFilter).label;
+
+  void _showSalonInfoSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.divider,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.store_outlined, color: Colors.black, size: 20),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'Noor Beauty Salon',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _SheetInfoRow(Icons.access_time_outlined,        'Hours',     'Open 11:00 AM – 9:00 PM (Daily)'),
+            _SheetInfoRow(Icons.location_on_outlined,        'Address',   AppConstants.salonLocation),
+            _SheetInfoRow(Icons.payments_outlined,           'Payment',   'Any mode of payment accepted at salon'),
+            _SheetInfoRow(Icons.chat_outlined,               'WhatsApp',  '01711 726 728'),
+            _SheetInfoRow(Icons.facebook_outlined,           'Facebook',  'facebook.com/noorbeautysalondhk'),
+            _SheetInfoRow(Icons.camera_alt_outlined,         'Instagram', '@noor_beauty_salon1'),
+            const SizedBox(height: 4),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showReviewSheet() {
+    int rating = 0;
+    final commentCtrl = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSt) => Padding(
+          padding: EdgeInsets.only(
+            left: 24, right: 24, top: 20,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 28,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text('Rate Your Experience',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              const Text('How was your visit to Noor Beauty?',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(5, (i) => GestureDetector(
+                  onTap: () => setSt(() => rating = i + 1),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Icon(
+                      i < rating ? Icons.star_rounded : Icons.star_outline_rounded,
+                      size: 44,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                )),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: commentCtrl,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Tell us about your experience...',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  filled: true,
+                  fillColor: AppColors.surface,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: AppColors.divider),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Later',
+                          style: TextStyle(color: AppColors.textSecondary)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton(
+                      onPressed: rating > 0 ? () async {
+                        Navigator.pop(ctx);
+                        try {
+                          await ApiService.instance.createReview({
+                            'rating': rating,
+                            'comment': commentCtrl.text.trim(),
+                            'source': 'app_cta',
+                          });
+                        } catch (_) {}
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Thank you for your feedback!'),
+                              backgroundColor: AppColors.success,
+                            ),
+                          );
+                        }
+                      } : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Submit',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).whenComplete(commentCtrl.dispose);
+  }
+
+  void _bookService(BuildContext context, SalonService service, ServiceSubOption? opt) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BookingScreen(preselectedService: service, preselectedSubOption: opt),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
     final booking = context.watch<BookingService>();
-    final userName = auth.currentUser?.name ?? 'Guest';
-    final popularServices = booking.services.take(4).toList();
+    final firstName = (auth.currentUser?.name ?? 'Guest').split(' ').first;
+    final allServices = booking.services;
+    final filtered = _applyFilter(allServices, _selectedFilter);
 
     return CustomScrollView(
       slivers: [
+        // ── Header ──────────────────────────────────────────────────────────
         SliverAppBar(
-          expandedHeight: 180,
+          expandedHeight: 210,
           pinned: true,
+          automaticallyImplyLeading: false,
+          backgroundColor: AppColors.surface,
+          title: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset(
+                  'assets/images/app_icon.png',
+                  width: 30,
+                  height: 30,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                'Noor Beauty',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.cardBorder),
+                  color: AppColors.background,
+                ),
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.notifications_none_outlined,
+                    color: AppColors.textSecondary,
+                  ),
+                  iconSize: 22,
+                  onPressed: _showNotifications,
+                ),
+              ),
+            ),
+          ],
           flexibleSpace: FlexibleSpaceBar(
+            collapseMode: CollapseMode.parallax,
             background: Container(
-              decoration: BoxDecoration(gradient: AppColors.primaryGradient),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF1A1A1A), Color(0xFF0F0F0F)],
+                ),
+              ),
               child: SafeArea(
                 child: Padding(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
+                      Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.asset(
+                              'assets/images/app_icon.png',
+                              width: 48,
+                              height: 48,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          const Spacer(),
+                          Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: AppColors.cardBorder),
+                              color: AppColors.surface.withValues(alpha: 0.7),
+                            ),
+                            child: IconButton(
+                              icon: const Icon(
+                                Icons.notifications_none_outlined,
+                                color: AppColors.textSecondary,
+                              ),
+                              iconSize: 22,
+                              onPressed: () {},
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Spacer(),
                       Text(
-                        'Hello, ${userName.split(' ').first}! ✨',
+                        'Hello, $firstName! ✨',
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 24,
+                          fontSize: 26,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        AppConstants.salonLocation,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.85),
-                          fontSize: 14,
-                        ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.location_on_outlined,
+                            color: AppColors.primary,
+                            size: 15,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            AppConstants.salonLocation,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.75),
+                              fontSize: 13,
+                            ),
+                          ),
+                          const Spacer(),
+                          // Social media quick-links
+                          _SocialIconBtn(
+                            svgPath: 'assets/images/ic_facebook.png',
+                            fallbackIcon: Icons.facebook,
+                            onTap: () => _launchUrl(_kFbUrl),
+                          ),
+                          const SizedBox(width: 6),
+                          _SocialIconBtn(
+                            svgPath: 'assets/images/ic_instagram.png',
+                            fallbackIcon: Icons.camera_alt_outlined,
+                            onTap: () => _launchUrl(_kIgUrl),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -105,39 +597,158 @@ class _HomeTab extends StatelessWidget {
             ),
           ),
         ),
+
+        // ── Category chips ───────────────────────────────────────────────────
+        SliverToBoxAdapter(
+          child: SizedBox(
+            height: 56,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              itemCount: _kCategories.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, i) {
+                final cat = _kCategories[i];
+                final selected = _selectedFilter == cat.filter;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  decoration: BoxDecoration(
+                    color: selected ? AppColors.primary : AppColors.surface,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: selected ? AppColors.primary : AppColors.cardBorder,
+                    ),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(20),
+                    child: InkWell(
+                      onTap: () {
+                        if (cat.filter.isEmpty) {
+                          setState(() => _selectedFilter = cat.filter);
+                        } else {
+                          widget.onCategoryTap(cat.filter);
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(20),
+                      splashColor: AppColors.primary.withValues(alpha: 0.2),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              cat.icon,
+                              size: 15,
+                              color: selected ? AppColors.secondary : AppColors.textSecondary,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              cat.label,
+                              style: TextStyle(
+                                color: selected ? AppColors.secondary : AppColors.textSecondary,
+                                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+
+        // ── Body ────────────────────────────────────────────────────────────
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _quickActionCard(context),
-                const SizedBox(height: 28),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Popular Services',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                    TextButton(
-                      onPressed: () {},
-                      child: const Text('See All'),
-                    ),
-                  ],
+                // Quick action card
+                _BookCard(
+                  serviceCount: allServices.length,
+                  stylistCount: booking.stylists.length,
+                  onBook: () {
+                    if (allServices.isNotEmpty) {
+                      _bookService(context, allServices.first, null);
+                    } else {
+                      widget.onNavigate(1);
+                    }
+                  },
+                ),
+                const SizedBox(height: 24),
+
+                // Featured bridal banner
+                const _FeaturedBanner(),
+                const SizedBox(height: 24),
+
+                // Our Work gallery (replace placeholders with real salon photos)
+                const _SectionLabel(title: 'Our Work'),
+                const SizedBox(height: 12),
+                const _GallerySection(),
+                const SizedBox(height: 24),
+
+                // Popular / filtered services
+                _SectionHeader(
+                  title: _selectedFilter.isEmpty ? 'Popular Services' : '$_categoryLabel Services',
+                  onSeeAll: () => widget.onNavigate(1),
                 ),
                 const SizedBox(height: 12),
-                ...popularServices.map(
-                  (s) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: ServiceCard(
-                      service: s,
-                      onTap: () => _bookService(context, s),
+                if (filtered.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    child: Center(
+                      child: Text(
+                        'No services in this category yet',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                      ),
+                    ),
+                  )
+                else
+                  ...filtered.map(
+                    (s) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: ServiceCard(
+                        service: s,
+                        onTap: () => _bookService(context, s, null),
+                        onSubOptionBook: (opt) => _bookService(context, s, opt),
+                      ),
                     ),
                   ),
+
+                // Customer reviews
+                const SizedBox(height: 12),
+                const _SectionLabel(title: 'What Our Customers Say'),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 148,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _kReviews.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 12),
+                    itemBuilder: (_, i) => _ReviewCard(review: _kReviews[i]),
+                  ),
                 ),
-                const SizedBox(height: 20),
-                _infoSection(),
+
+                // Review CTA
+                const SizedBox(height: 12),
+                _ReviewCTA(onTap: _showReviewSheet),
+                const SizedBox(height: 16),
+
+                // Salon Info "!" tap button
+                _SalonInfoButton(onTap: () => _showSalonInfoSheet(context)),
+                const SizedBox(height: 12),
+
+                // WhatsApp CTA — Call + Chat
+                _WhatsAppCTA(
+                  onCall: () => _launchUrl(_kPhoneUrl),
+                  onChat: () => _launchUrl(_kWaUrl),
+                ),
               ],
             ),
           ),
@@ -145,8 +756,52 @@ class _HomeTab extends StatelessWidget {
       ],
     );
   }
+}
 
-  Widget _quickActionCard(BuildContext context) {
+// ---------------------------------------------------------------------------
+// Reusable sub-widgets
+// ---------------------------------------------------------------------------
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final VoidCallback onSeeAll;
+
+  const _SectionHeader({required this.title, required this.onSeeAll});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        TextButton(
+          onPressed: onSeeAll,
+          child: const Text('See All'),
+        ),
+      ],
+    );
+  }
+}
+
+class _BookCard extends StatelessWidget {
+  final int serviceCount;
+  final int stylistCount;
+  final VoidCallback onBook;
+
+  const _BookCard({
+    required this.serviceCount,
+    required this.stylistCount,
+    required this.onBook,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final svcLabel = serviceCount > 0 ? '$serviceCount services' : 'services';
+    final styLabel = stylistCount > 0 ? '$stylistCount expert stylists' : 'expert stylists';
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -155,8 +810,8 @@ class _HomeTab extends StatelessWidget {
         boxShadow: [
           BoxShadow(
             color: AppColors.accent.withValues(alpha: 0.3),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
@@ -176,71 +831,574 @@ class _HomeTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '11 services • 10 expert stylists',
+                  '$svcLabel • $styLabel',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.9),
-                    fontSize: 14,
+                    fontSize: 13,
                   ),
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 12),
           ElevatedButton(
-            onPressed: () {
-              final services = context.read<BookingService>().services;
-              if (services.isNotEmpty) {
-                _bookService(context, services.first);
-              }
-            },
+            onPressed: onBook,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.secondary,
               foregroundColor: AppColors.primary,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
             ),
-            child: const Text('Book Now'),
+            child: const Text('Book Now', style: TextStyle(fontWeight: FontWeight.w600)),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _infoSection() {
+class _SalonInfoButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _SalonInfoButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.cardBorder),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 28, height: 28,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primary,
+              ),
+              child: const Center(
+                child: Text(
+                  '!',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Salon Info', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                  Text('Hours, location, payment & contact', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetInfoRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  const _SheetInfoRow(this.icon, this.label, this.value);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: AppColors.primary),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 80,
+            child: Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+          ),
+          Expanded(
+            child: Text(value, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Social icon button ─────────────────────────────────────────────────────
+
+class _SocialIconBtn extends StatelessWidget {
+  final String svgPath;
+  final IconData fallbackIcon;
+  final VoidCallback onTap;
+
+  const _SocialIconBtn({
+    required this.svgPath,
+    required this.fallbackIcon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: AppColors.surface.withValues(alpha: 0.7),
+          border: Border.all(color: AppColors.cardBorder),
+        ),
+        child: Icon(fallbackIcon, size: 16, color: AppColors.primary),
+      ),
+    );
+  }
+}
+
+// ── WhatsApp CTA ───────────────────────────────────────────────────────────
+
+class _WhatsAppCTA extends StatelessWidget {
+  final VoidCallback onCall;
+  final VoidCallback onChat;
+  const _WhatsAppCTA({required this.onCall, required this.onChat});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A2A1A),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF25D366).withValues(alpha: 0.5)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF25D366).withValues(alpha: 0.12),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF25D366).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.chat_outlined, color: Color(0xFF25D366), size: 26),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'WhatsApp Us',
+                  style: TextStyle(
+                    color: Color(0xFF25D366),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  '01711 726 728',
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          GestureDetector(
+            onTap: onCall,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: Colors.white10,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF25D366).withValues(alpha: 0.4)),
+              ),
+              child: const Icon(Icons.call_outlined, color: Color(0xFF25D366), size: 18),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: onChat,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              decoration: BoxDecoration(
+                color: const Color(0xFF25D366),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Text(
+                'Chat',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Review CTA ─────────────────────────────────────────────────────────────
+
+class _ReviewCTA extends StatelessWidget {
+  final VoidCallback onTap;
+  const _ReviewCTA({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF2A2000), Color(0xFF1A1500)],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.primary.withValues(alpha: 0.45)),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: 0.10),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.star_rounded, color: AppColors.primary, size: 26),
+            ),
+            const SizedBox(width: 16),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Enjoying Noor?',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                  SizedBox(height: 3),
+                  Text(
+                    'Your review helps us grow — thank you!',
+                    style: TextStyle(color: Colors.white60, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Text(
+                'Rate Us',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  final String title;
+  const _SectionLabel({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title,
+      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+    );
+  }
+}
+
+class _ReviewCard extends StatelessWidget {
+  final _Review review;
+  const _ReviewCard({required this.review});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 240,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.cardBorder),
       ),
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.info_outline, color: AppColors.primary, size: 20),
-              SizedBox(width: 8),
-              Text(
-                'Salon Info',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: AppColors.primary.withValues(alpha: 0.2),
+                child: Text(
+                  review.name[0],
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  review.name,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Row(
+                children: List.generate(
+                  5,
+                  (i) => Icon(
+                    i < review.rating ? Icons.star : Icons.star_border,
+                    size: 13,
+                    color: AppColors.primary,
+                  ),
+                ),
               ),
             ],
           ),
-          SizedBox(height: 12),
-          _InfoRow(icon: Icons.access_time, text: 'Open ${AppConstants.defaultSalonOpen} – ${AppConstants.defaultSalonClose}'),
-          _InfoRow(icon: Icons.payments_outlined, text: 'Cash payment at salon'),
-          _InfoRow(icon: Icons.location_on_outlined, text: AppConstants.salonLocation),
+          const SizedBox(height: 10),
+          Expanded(
+            child: Text(
+              review.text,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                height: 1.4,
+              ),
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
     );
   }
+}
 
-  void _bookService(BuildContext context, SalonService service) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => BookingScreen(preselectedService: service),
+// ── Gallery section ────────────────────────────────────────────────────────
+
+// ── Featured banner ────────────────────────────────────────────────────────
+
+class _FeaturedBanner extends StatelessWidget {
+  const _FeaturedBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(
+        height: 200,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.asset(
+              'assets/images/gallery_2.jpg',
+              fit: BoxFit.cover,
+              alignment: Alignment.topCenter,
+            ),
+            // Dark gradient overlay
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [Colors.black.withValues(alpha: 0.75), Colors.transparent],
+                ),
+              ),
+            ),
+            // Text overlay
+            Positioned(
+              bottom: 16, left: 16, right: 16,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      'Bridal Special',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Complete Bridal Package',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Text(
+                    'Make your special day unforgettable',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GallerySection extends StatelessWidget {
+  const _GallerySection();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 140,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _kGallery.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (_, i) {
+          final item = _kGallery[i];
+          final hasImage = item.imagePath != null;
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: SizedBox(
+              width: 110,
+              height: 140,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Real photo or gradient placeholder
+                  hasImage
+                      ? Image.asset(
+                          item.imagePath!,
+                          fit: BoxFit.cover,
+                          alignment: Alignment.topCenter,
+                        )
+                      : Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: item.gradient,
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(item.icon, color: AppColors.primary.withValues(alpha: 0.9), size: 28),
+                              const SizedBox(height: 6),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                child: Text(
+                                  item.label,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                  // Bottom label gradient (real images only)
+                  if (hasImage)
+                    Positioned(
+                      bottom: 0, left: 0, right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(8, 18, 8, 8),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.bottomCenter,
+                            end: Alignment.topCenter,
+                            colors: [Colors.black.withValues(alpha: 0.75), Colors.transparent],
+                          ),
+                        ),
+                        child: Text(
+                          item.label,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  // Placeholder add-photo badge for non-image slots
+                  if (!hasImage)
+                    Positioned(
+                      top: 8, right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Icon(Icons.add_photo_alternate_outlined, size: 12, color: AppColors.primary),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

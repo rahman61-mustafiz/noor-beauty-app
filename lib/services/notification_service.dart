@@ -3,7 +3,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-import 'api_service.dart';
 import 'storage_service.dart';
 
 /// Background message handler must be a top-level function.
@@ -31,24 +30,10 @@ class NotificationService {
     if (_initialized) return;
 
     try {
-      // Load Firebase config from backend (no hardcoded keys)
-      final config = await ApiService.instance.getFirebaseConfig();
-      await Firebase.initializeApp(
-        options: FirebaseOptions(
-          apiKey: config['apiKey'] as String? ?? '',
-          appId: config['appId'] as String? ?? '',
-          messagingSenderId: config['messagingSenderId'] as String? ?? '',
-          projectId: config['projectId'] as String? ?? '',
-        ),
-      );
+      await Firebase.initializeApp();
     } catch (e) {
-      debugPrint('Firebase init from backend failed: $e');
-      try {
-        await Firebase.initializeApp();
-      } catch (e2) {
-        debugPrint('Firebase default init failed: $e2');
-        return;
-      }
+      debugPrint('Firebase init failed: $e');
+      return;
     }
 
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);

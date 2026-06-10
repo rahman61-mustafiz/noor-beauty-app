@@ -1,31 +1,29 @@
 import 'package:flutter/foundation.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
-import 'package:otp/otp.dart';
 
-import '../models/admin_user.dart';
 import '../models/user.dart';
 import '../utils/constants.dart';
 import 'api_service.dart';
 import 'storage_service.dart';
+
+class OtpResult {
+  final bool success;
+  final bool isNewUser;
+  OtpResult({required this.success, required this.isNewUser});
+}
 
 class AuthService extends ChangeNotifier {
   final ApiService _api = ApiService.instance;
   StorageService? _storage;
 
   User? _currentUser;
-  AdminUser? _currentAdmin;
-  String? _mfaSessionToken;
-  String? _pendingMfaSecret;
   bool _isLoading = false;
   String? _error;
 
-  User? get currentUser => _currentUser;
-  AdminUser? get currentAdmin => _currentAdmin;
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-  bool get isLoggedIn => _currentUser != null;
-  bool get isAdminLoggedIn => _currentAdmin != null;
-  String? get mfaSessionToken => _mfaSessionToken;
+  User?   get currentUser => _currentUser;
+  bool    get isLoading   => _isLoading;
+  String? get error       => _error;
+  bool    get isLoggedIn  => _currentUser != null;
 
   Future<void> init() async {
     _storage = await StorageService.getInstance();
@@ -33,66 +31,100 @@ class AuthService extends ChangeNotifier {
     if (token != null && !JwtDecoder.isExpired(token)) {
       _api.setAccessToken(token);
       _currentUser = User(
-        id: _storage!.getUserId() ?? '',
-        name: _storage!.getUserName() ?? '',
-        email: _storage!.getUserEmail() ?? '',
-        phone: '',
+        id:        _storage!.getUserId()   ?? '',
+        name:      _storage!.getUserName() ?? '',
+        phone:     _storage!.getUserPhone() ?? '',
         createdAt: DateTime.now(),
-        emailVerified: true,
       );
     }
-
-    if (_storage!.getIsAdmin() && _storage!.isAdminLoggedIn) {
-      final adminToken = _storage!.getAdminToken();
-      if (adminToken != null) {
-        _api.setAdminToken(adminToken);
-        _currentAdmin = AdminUser(
-          id: 'admin',
-          email: _storage!.getUserEmail() ?? '',
-          mfaEnabled: true,
-          createdAt: DateTime.now(),
-        );
-      }
-    }
     notifyListeners();
   }
 
-  void _setLoading(bool value) {
-    _isLoading = value;
-    notifyListeners();
-  }
+  void _setLoading(bool v) { _isLoading = v; notifyListeners(); }
+  void clearError() { _error = null; notifyListeners(); }
 
-  void clearError() {
+  // ── OTP auth ────────────────────────────────────────────────────────────────
+
+  /// Step 1: request an OTP to be sent to [phone] (international format).
+  /// Returns true even when the server is unreachable so the UI flow continues.
+  Future<bool> requestOtp(String phone) async {
+    _setLoading(true);
     _error = null;
-    notifyListeners();
+    try {
+      await _api.requestOtp(phone);
+      return true;
+    } catch (e) {
+      if (e is ApiException) {
+        _error = e.message;
+        return false;
+      }
+      // Server unreachable → demo mode: let the UI proceed
+      return true;
+    } finally {
+      _setLoading(false);
+    }
   }
 
-  /// Refresh JWT if within threshold of expiry.
+  /// Step 2: verify the OTP code.
+  /// Returns [OtpResult] with success flag and whether this is a brand-new user.
+  Future<OtpResult> verifyOtp(String phone, String code) async {
+    _setLoading(true);
+    _error = null;
+    try {
+      final response = await _api.verifyOtp(phone: phone, code: code);
+      await _saveSession(response);
+      final isNew = response['isNewUser'] as bool? ?? false;
+      return OtpResult(success: true, isNewUser: isNew);
+    } catch (e) {
+      if (e is ApiException) {
+        _error = e.message;
+        return OtpResult(success: false, isNewUser: false);
+      }
+      // Server unreachable → demo mode: create a local session
+      final demoId = 'demo-${phone.replaceAll(RegExp(r'[^0-9]'), '')}';
+      _currentUser = User(id: demoId, name: '', phone: phone, createdAt: DateTime.now());
+      await _storage!.saveUserData(userId: demoId, name: '', phone: phone);
+      notifyListeners();
+      return OtpResult(success: true, isNewUser: true);
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Step 3 (first-time only): save the user's name.
+  Future<void> saveName(String name) async {
+    if (_currentUser == null) return;
+    _currentUser = _currentUser!.copyWith(name: name);
+    await _storage!.saveUserData(
+      userId: _currentUser!.id,
+      name:   name,
+      phone:  _currentUser!.phone,
+    );
+    notifyListeners();
+    _api.updateProfile({'name': name}).catchError((_) => <String, dynamic>{});
+  }
+
+  // ── Token refresh ─────────────────────────────────────────────────────────
+
   Future<bool> refreshTokenIfNeeded() async {
     final token = _storage?.getAccessToken();
     if (token == null) return false;
-
     if (!JwtDecoder.isExpired(token)) {
       final expiry = JwtDecoder.getExpirationDate(token);
-      final minutesLeft = expiry.difference(DateTime.now()).inMinutes;
-      if (minutesLeft > AppConstants.jwtRefreshThresholdMinutes) {
+      if (expiry.difference(DateTime.now()).inMinutes > AppConstants.jwtRefreshThresholdMinutes) {
         return true;
       }
     }
-
     final refresh = _storage?.getRefreshToken();
     if (refresh == null) return false;
-
     try {
       final response = await _api.refreshToken(refreshToken: refresh);
-      final newAccess = response['accessToken'] as String?;
+      final newAccess  = response['accessToken'] as String?;
       final newRefresh = response['refreshToken'] as String?;
       if (newAccess != null) {
         await _storage!.saveAccessToken(newAccess);
         _api.setAccessToken(newAccess);
-        if (newRefresh != null) {
-          await _storage!.saveRefreshToken(newRefresh);
-        }
+        if (newRefresh != null) await _storage!.saveRefreshToken(newRefresh);
         return true;
       }
     } catch (_) {
@@ -101,204 +133,18 @@ class AuthService extends ChangeNotifier {
     return false;
   }
 
-  Future<bool> register({
-    required String name,
-    required String email,
-    required String phone,
-    required String password,
-  }) async {
+  // ── Account deletion ──────────────────────────────────────────────────────
+
+  Future<bool> deleteAccount() async {
     _setLoading(true);
-    _error = null;
     try {
-      await _api.register(
-        name: name,
-        email: email,
-        phone: phone,
-        password: password,
-      );
-      return true;
-    } on ApiException catch (e) {
-      _error = e.message;
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  Future<bool> login({
-    required String email,
-    required String password,
-  }) async {
-    _setLoading(true);
-    _error = null;
-    try {
-      final response = await _api.login(email: email, password: password);
-      await _saveCustomerSession(response);
-      return true;
-    } on ApiException catch (e) {
-      _error = e.message;
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  Future<void> _saveCustomerSession(Map<String, dynamic> response) async {
-    final accessToken = response['accessToken'] as String;
-    final refreshToken = response['refreshToken'] as String?;
-    final userData = response['user'] as Map<String, dynamic>? ?? response;
-
-    await _storage!.saveAccessToken(accessToken);
-    if (refreshToken != null) {
-      await _storage!.saveRefreshToken(refreshToken);
-    }
-    _api.setAccessToken(accessToken);
-
-    _currentUser = User.fromJson(userData);
-    await _storage!.saveUserData(
-      userId: _currentUser!.id,
-      name: _currentUser!.name,
-      email: _currentUser!.email,
-    );
-    notifyListeners();
-  }
-
-  Future<bool> verifyEmail({
-    required String email,
-    required String code,
-  }) async {
-    _setLoading(true);
-    _error = null;
-    try {
-      final response = await _api.verifyEmail(email: email, code: code);
-      if (response['accessToken'] != null) {
-        await _saveCustomerSession(response);
-      }
-      return true;
-    } on ApiException catch (e) {
-      _error = e.message;
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  Future<bool> passwordReset({required String email}) async {
-    _setLoading(true);
-    _error = null;
-    try {
-      await _api.passwordReset(email: email);
-      return true;
-    } on ApiException catch (e) {
-      _error = e.message;
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  Future<bool> adminLogin({
-    required String email,
-    required String password,
-  }) async {
-    _setLoading(true);
-    _error = null;
-    try {
-      final response = await _api.adminLogin(email: email, password: password);
-      _mfaSessionToken = response['sessionToken'] as String?;
-      _pendingMfaSecret = response['mfaSecret'] as String?;
-      _currentAdmin = AdminUser.fromJson(
-        response['admin'] as Map<String, dynamic>? ?? {'email': email},
-      );
-      return true;
-    } on ApiException catch (e) {
-      _error = e.message;
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Verify TOTP code for admin MFA using the otp package.
-  bool verifyTotpLocally(String secret, String code) {
-    try {
-      final generated = OTP.generateTOTPCodeString(
-        secret,
-        DateTime.now().millisecondsSinceEpoch,
-        algorithm: Algorithm.SHA1,
-        isGoogle: true,
-        length: 6,
-        interval: 30,
-      );
-      return generated == code.trim();
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<bool> verifyMfa({required String code}) async {
-    _setLoading(true);
-    _error = null;
-    try {
-      if (_mfaSessionToken == null) {
-        _error = 'MFA session expired. Please login again.';
-        return false;
-      }
-
-      final response = await _api.verifyMfa(
-        sessionToken: _mfaSessionToken!,
-        code: code,
-      );
-
-      final adminToken = response['accessToken'] as String? ??
-          response['adminToken'] as String?;
-      if (adminToken == null) {
-        _error = 'MFA verification failed';
-        return false;
-      }
-
-      await _storage!.saveAdminToken(adminToken);
-      await _storage!.setIsAdmin(true);
-      await _storage!.updateAdminLastActivity();
-      _api.setAdminToken(adminToken);
-
-      _currentAdmin = AdminUser.fromJson(
-        response['admin'] as Map<String, dynamic>? ??
-            {'email': _currentAdmin?.email ?? ''},
-      );
-      _mfaSessionToken = null;
-      notifyListeners();
-      return true;
-    } on ApiException catch (e) {
-      _error = e.message;
-      return false;
-    } finally {
-      _setLoading(false);
-    }
-  }
-
-  /// Generate otpauth URI for QR code display during MFA setup.
-  String generateMfaQrUri({
-    required String secret,
-    required String email,
-  }) {
-    final issuer = Uri.encodeComponent(AppConstants.appName);
-    final account = Uri.encodeComponent(email);
-    return 'otpauth://totp/$issuer:$account?secret=$secret&issuer=$issuer&algorithm=SHA1&digits=6&period=30';
-  }
-
-  String? get pendingMfaSecret => _pendingMfaSecret;
-
-  /// Check and enforce 30-minute admin session timeout.
-  bool checkAdminSession() {
-    if (_storage == null) return false;
-    if (_storage!.isAdminSessionExpired()) {
-      adminLogout();
-      return false;
-    }
-    _storage!.updateAdminLastActivity();
+      await _api.deleteAccount();
+    } catch (_) {}
+    await logout();
     return true;
   }
+
+  // ── Logout ────────────────────────────────────────────────────────────────
 
   Future<void> logout() async {
     await _storage?.clearCustomerSession();
@@ -307,11 +153,26 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> adminLogout() async {
-    await _storage?.clearAdminSession();
-    _api.setAdminToken(null);
-    _currentAdmin = null;
-    _mfaSessionToken = null;
+  // ── Private helpers ───────────────────────────────────────────────────────
+
+  Future<void> _saveSession(Map<String, dynamic> response) async {
+    final accessToken  = response['accessToken'] as String? ?? response['token'] as String? ?? '';
+    final refreshToken = response['refreshToken'] as String?;
+    final userData     = response['user'] as Map<String, dynamic>? ?? response;
+
+    if (accessToken.isNotEmpty) {
+      await _storage!.saveAccessToken(accessToken);
+      _api.setAccessToken(accessToken);
+    }
+    if (refreshToken != null) await _storage!.saveRefreshToken(refreshToken);
+
+    _currentUser = User.fromJson(userData);
+    await _storage!.saveUserData(
+      userId: _currentUser!.id,
+      name:   _currentUser!.name,
+      phone:  _currentUser!.phone,
+      email:  _currentUser!.email,
+    );
     notifyListeners();
   }
 }
