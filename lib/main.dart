@@ -63,6 +63,16 @@ class NoorBeautyApp extends StatelessWidget {
         builder: (context, child) =>
             AppTheme.applyFontFamily(context, child ?? const SizedBox.shrink()),
         initialRoute: authService.isLoggedIn ? '/home' : '/phone-login',
+        // Force the initial navigation stack to contain exactly ONE route.
+        // Flutter otherwise expands a path like '/home' into ['/', '/home'],
+        // and the phantom '/' falls through to _generateRoute's default
+        // (the login screen) — leaving login sitting beneath Home so a back
+        // press looks like a logout. This guarantees Home (or login) is the
+        // true root.
+        onGenerateInitialRoutes: (initialRouteName) {
+          final route = _generateRoute(RouteSettings(name: initialRouteName));
+          return route != null ? [route] : <Route<dynamic>>[];
+        },
         onGenerateRoute: _generateRoute,
       ),
     );

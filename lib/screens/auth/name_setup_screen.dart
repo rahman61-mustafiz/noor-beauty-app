@@ -29,7 +29,9 @@ class _NameSetupScreenState extends State<NameSetupScreen> {
     setState(() => _saving = true);
     await context.read<AuthService>().saveName(_ctrl.text.trim());
     if (!mounted) return;
-    Navigator.pushReplacementNamed(context, '/home');
+    // Clear the auth stack so Home is the root route (no login screen left
+    // underneath that a back press could reveal).
+    Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
   }
 
   @override

@@ -58,7 +58,10 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
       if (result.isNewUser && !hasName) {
         Navigator.pushReplacementNamed(context, '/name-setup');
       } else {
-        Navigator.pushReplacementNamed(context, '/home');
+        // Clear the whole auth stack so Home becomes the root route. Otherwise
+        // the login screen lingers beneath Home and a back press reveals it
+        // (looking like a logout).
+        Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
       }
     } else {
       _ctrl.clear();
