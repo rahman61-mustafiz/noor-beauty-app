@@ -82,30 +82,100 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _deleteAccount() async {
+    // Reasons are shown for UX only. The selection lives in local dialog state
+    // and is discarded — it is never sent to the backend, stored, or logged.
+    const reasons = <String>[
+      "Service didn't meet my expectations",
+      "I'm moving to another salon",
+      'Other',
+    ];
+    String? selectedReason;
+
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Account'),
-        content: const Text(
-          'This will permanently delete your account and all your data — bookings, history, and preferences.\n\nThis cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: Colors.white,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Delete account?'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'This will permanently delete your account and all your data — bookings, history, and preferences.\n\nThis cannot be undone.',
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Please tell us why:',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 4),
+                ...reasons.map((reason) {
+                  final selected = selectedReason == reason;
+                  return InkWell(
+                    onTap: () => setDialogState(() => selectedReason = reason),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            selected
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_unchecked,
+                            color: selected
+                                ? AppColors.primary
+                                : AppColors.textSecondary,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          // Expanded so long reasons wrap instead of overflowing
+                          // on small screens.
+                          Expanded(
+                            child: Text(
+                              reason,
+                              style: TextStyle(
+                                color: selected
+                                    ? AppColors.textPrimary
+                                    : AppColors.textSecondary,
+                                fontWeight:
+                                    selected ? FontWeight.w600 : FontWeight.normal,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ],
             ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete My Account'),
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.error,
+                foregroundColor: Colors.white,
+              ),
+              // A reason must be selected before deletion can proceed.
+              onPressed: selectedReason == null
+                  ? null
+                  : () => Navigator.pop(ctx, true),
+              child: const Text('Delete My Account'),
+            ),
+          ],
+        ),
       ),
     );
     if (confirmed != true || !mounted) return;
+    // selectedReason intentionally goes no further than this dialog — it only
+    // gated the confirm button and is now discarded (never sent or stored).
 
     final auth = context.read<AuthService>();
     final deleted = await auth.deleteAccount();
