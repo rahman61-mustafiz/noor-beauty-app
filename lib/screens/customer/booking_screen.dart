@@ -11,6 +11,7 @@ import '../../services/auth_service.dart';
 import '../../services/booking_service.dart';
 import '../../services/notification_service.dart';
 import '../../utils/colors.dart';
+import '../../utils/nav.dart';
 import '../../widgets/custom_button.dart';
 
 /// Simplified booking: pick date & time → confirm with price.
@@ -170,7 +171,12 @@ class _BookingScreenState extends State<BookingScreen> {
     final stepCount = _service != null && widget.preselectedService != null ? 2 : 3;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Book Appointment')),
+      appBar: AppBar(
+        title: const Text('Book Appointment'),
+        // Explicit, safe back: returns to the previous screen (or Home),
+        // never to the login screen. Keeps the user logged in.
+        leading: BackButton(onPressed: () => safeBack(context)),
+      ),
       body: Column(
         children: [
           // Progress bar

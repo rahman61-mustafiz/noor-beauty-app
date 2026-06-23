@@ -26,6 +26,10 @@ class AuthService extends ChangeNotifier {
   String? get error => _error;
   bool get isLoggedIn => _currentUser != null;
 
+  /// The display name remembered locally on this device (from a previous
+  /// sign-in). Empty when nothing has been saved yet.
+  String get cachedName => _storage?.getUserName() ?? '';
+
   Future<void> init() async {
     _storage = await StorageService.getInstance();
     final token = _storage!.getAccessToken();
@@ -182,6 +186,17 @@ class AuthService extends ChangeNotifier {
     }
 
     _currentUser = User.fromJson(userData);
+
+    // App-only persistence: if the server didn't return a name (common when
+    // the backend doesn't store it), fall back to the name we cached locally
+    // on a previous sign-in so the user doesn't have to retype it.
+    if (_currentUser!.name.trim().isEmpty) {
+      final cached = _storage!.getUserName();
+      if (cached != null && cached.trim().isNotEmpty) {
+        _currentUser = _currentUser!.copyWith(name: cached);
+      }
+    }
+
     await _storage!.saveUserData(
       userId: _currentUser!.id,
       name: _currentUser!.name,

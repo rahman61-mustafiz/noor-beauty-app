@@ -15,6 +15,15 @@ class _NameSetupScreenState extends State<NameSetupScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _saving   = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill with the name remembered locally from a previous sign-in so the
+    // user doesn't have to retype it.
+    final cached = context.read<AuthService>().cachedName;
+    if (cached.isNotEmpty) _ctrl.text = cached;
+  }
+
   Future<void> _continue() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);

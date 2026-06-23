@@ -51,7 +51,11 @@ class _OtpVerifyScreenState extends State<OtpVerifyScreen> {
     if (!mounted) return;
 
     if (result.success) {
-      if (result.isNewUser) {
+      // Only ask for a name when we genuinely don't have one yet (neither from
+      // the server nor cached locally). This stops returning users from having
+      // to retype their name on every sign-in.
+      final hasName = (auth.currentUser?.name ?? '').trim().isNotEmpty;
+      if (result.isNewUser && !hasName) {
         Navigator.pushReplacementNamed(context, '/name-setup');
       } else {
         Navigator.pushReplacementNamed(context, '/home');

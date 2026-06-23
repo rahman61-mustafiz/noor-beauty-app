@@ -155,7 +155,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final pages = [
       _HomeTab(onNavigate: _goTo, onCategoryTap: _goToServicesWithFilter),
       ServicesScreen(categoryFilter: _serviceFilter),
-      const GalleryScreen(),
+      GalleryScreen(onBack: () => _goTo(0)),
       const ProfileScreen(),
     ];
 
@@ -721,13 +721,12 @@ class _HomeTabState extends State<_HomeTab> {
                 const SizedBox(height: 12),
                 const _SectionLabel(title: 'What Our Customers Say'),
                 const SizedBox(height: 12),
-                SizedBox(
-                  height: 148,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _reviews.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 12),
-                    itemBuilder: (_, i) => _ReviewCard(review: _reviews[i]),
+                // Full-width cards that grow to fit the review text. Long
+                // reviews wrap and can be expanded with "Read more".
+                ..._reviews.map(
+                  (r) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _ReviewCard(review: r),
                   ),
                 ),
 
@@ -1152,14 +1151,29 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-class _ReviewCard extends StatelessWidget {
+class _ReviewCard extends StatefulWidget {
   final _Review review;
   const _ReviewCard({required this.review});
 
   @override
+  State<_ReviewCard> createState() => _ReviewCardState();
+}
+
+class _ReviewCardState extends State<_ReviewCard> {
+  bool _expanded = false;
+  static const int _collapsedLines = 4;
+  static const TextStyle _textStyle = TextStyle(
+    color: AppColors.textSecondary,
+    fontSize: 13,
+    height: 1.4,
+  );
+
+  @override
   Widget build(BuildContext context) {
+    final review = widget.review;
+    final displayName = review.name.isEmpty ? 'Guest' : review.name;
     return Container(
-      width: 240,
+      width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -1175,7 +1189,7 @@ class _ReviewCard extends StatelessWidget {
                 radius: 16,
                 backgroundColor: AppColors.primary.withValues(alpha: 0.2),
                 child: Text(
-                  review.name[0],
+                  displayName[0],
                   style: const TextStyle(
                     color: AppColors.primary,
                     fontWeight: FontWeight.bold,
@@ -1186,7 +1200,7 @@ class _ReviewCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  review.name,
+                  displayName,
                   style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1204,17 +1218,49 @@ class _ReviewCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          Expanded(
-            child: Text(
-              review.text,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 13,
-                height: 1.4,
-              ),
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-            ),
+          // Full review text wraps and grows to fit. When collapsed it is
+          // capped at a few lines with a "Read more" toggle; long words wrap
+          // so nothing overflows horizontally.
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final painter = TextPainter(
+                text: TextSpan(text: review.text, style: _textStyle),
+                maxLines: _collapsedLines,
+                textDirection: TextDirection.ltr,
+              )..layout(maxWidth: constraints.maxWidth);
+              final isOverflowing = painter.didExceedMaxLines;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    review.text,
+                    style: _textStyle,
+                    softWrap: true,
+                    maxLines: _expanded ? null : _collapsedLines,
+                    overflow: _expanded
+                        ? TextOverflow.visible
+                        : TextOverflow.ellipsis,
+                  ),
+                  if (isOverflowing)
+                    GestureDetector(
+                      onTap: () => setState(() => _expanded = !_expanded),
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          _expanded ? 'Read less' : 'Read more',
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         ],
       ),

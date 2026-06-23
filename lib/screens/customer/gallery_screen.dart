@@ -64,7 +64,11 @@ const _kFallback = <_Work>[
 ];
 
 class GalleryScreen extends StatefulWidget {
-  const GalleryScreen({super.key});
+  /// Optional back handler. When provided (e.g. when shown as a tab inside the
+  /// home shell), a back arrow is shown that returns to Home — never to login.
+  final VoidCallback? onBack;
+
+  const GalleryScreen({super.key, this.onBack});
   @override
   State<GalleryScreen> createState() => _GalleryScreenState();
 }
@@ -128,9 +132,15 @@ class _GalleryScreenState extends State<GalleryScreen> {
             SliverAppBar(
               pinned: true,
               automaticallyImplyLeading: false,
+              leading: widget.onBack != null
+                  ? IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                      onPressed: widget.onBack,
+                    )
+                  : null,
               backgroundColor: AppColors.surface,
               toolbarHeight: 88,
-              titleSpacing: 20,
+              titleSpacing: widget.onBack != null ? 0 : 20,
               flexibleSpace: Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
