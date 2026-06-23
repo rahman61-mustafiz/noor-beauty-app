@@ -133,6 +133,8 @@ class BookingService extends ChangeNotifier {
     required String customerId,
     required String stylistId,
     required String serviceId,
+    required String serviceName,
+    required int price,
     required DateTime bookingDate,
     required String startTime,
     required int durationMinutes,
@@ -147,14 +149,16 @@ class BookingService extends ChangeNotifier {
     try {
       final response = await _api.createBooking({
         'customerId': customerId,
-        'stylistId': stylistId,
+        'staffId': stylistId,
         'serviceId': serviceId,
+        'serviceName': serviceName,
+        'totalAmount': price,
         'bookingDate': bookingDate.toIso8601String().split('T').first,
         'startTime': startTime,
         'endTime': endTime,
         'durationMinutes': durationMinutes,
         'status': 'pending',
-        'notesCustomer': notes,
+        'notes': notes,
       });
 
       final booking = Booking.fromJson(

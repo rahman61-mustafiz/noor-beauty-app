@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:marquee/marquee.dart';
 
@@ -207,32 +205,6 @@ class _HomeTab extends StatefulWidget {
 
 class _HomeTabState extends State<_HomeTab> {
   String _selectedFilter = _kAllFilter;
-  List<_Review> _reviews = const [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadReviews();
-  }
-
-  Future<void> _loadReviews() async {
-    try {
-      final res = await http.get(
-          Uri.parse('${AppConstants.apiBaseUrl}${ApiEndpoints.reviews}'));
-      if (res.statusCode == 200) {
-        final body = jsonDecode(res.body);
-        final List list = (body is Map && body['data'] is List) ? body['data'] : [];
-        final items = <_Review>[];
-        for (final e in list) {
-          final name = (e['customerName'] ?? 'Guest').toString();
-          final rating = (e['rating'] is num) ? (e['rating'] as num).toInt() : 5;
-          final text = (e['comment'] ?? '').toString();
-          if (text.isNotEmpty) items.add(_Review(name, rating, text));
-        }
-        if (mounted) setState(() => _reviews = items);
-      }
-    } catch (_) {}
-  }
 
   void _showNotifications() {
     showModalBottomSheet(
@@ -435,7 +407,6 @@ class _HomeTabState extends State<_HomeTab> {
                     flex: 2,
                     child: ElevatedButton(
                       onPressed: rating > 0 ? () async {
-                        final messenger = ScaffoldMessenger.of(context);
                         Navigator.pop(ctx);
                         try {
                           await ApiService.instance.createReview({
@@ -444,13 +415,14 @@ class _HomeTabState extends State<_HomeTab> {
                             'source': 'app_cta',
                           });
                         } catch (_) {}
-                        messenger.showSnackBar(
-                          const SnackBar(
-                            content: Text('Thank you for your feedback!'),
-                            backgroundColor: AppColors.success,
-                          ),
-                        );
-                        if (mounted) _loadReviews();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Thank you for your feedback!'),
+                              backgroundColor: AppColors.success,
+                            ),
+                          );
+                        }
                       } : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
@@ -490,9 +462,11 @@ class _HomeTabState extends State<_HomeTab> {
 
     return CustomScrollView(
       slivers: [
+        SliverAppBar(pinned: true, primary: true, toolbarHeight: 42, automaticallyImplyLeading: false, backgroundColor: AppColors.primary, titleSpacing: 0, title: const _OfferBar()),
         // ── Header ──────────────────────────────────────────────────────────
         SliverAppBar(
           expandedHeight: 210,
+          primary: false,
           pinned: true,
           automaticallyImplyLeading: false,
           backgroundColor: AppColors.surface,
@@ -509,7 +483,7 @@ class _HomeTabState extends State<_HomeTab> {
               ),
               const SizedBox(width: 10),
               const Text(
-                'Noor Beauty Salon',
+                'Noor Beauty',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
               ),
             ],
@@ -599,7 +573,6 @@ class _HomeTabState extends State<_HomeTab> {
         ),
 
         // ── Category chips ───────────────────────────────────────────────────
-        SliverAppBar(pinned: true, primary: false, toolbarHeight: 42, automaticallyImplyLeading: false, backgroundColor: AppColors.primary, titleSpacing: 0, title: const _OfferBar()),
         SliverToBoxAdapter(
           child: SizedBox(
             height: 56,
@@ -674,7 +647,13 @@ class _HomeTabState extends State<_HomeTab> {
                 _BookCard(
                   serviceCount: allServices.length,
                   stylistCount: booking.stylists.length,
-                  onBook: () => widget.onNavigate(1),
+                  onBook: () {
+                    if (allServices.isNotEmpty) {
+                      _bookService(context, allServices.first, null);
+                    } else {
+                      widget.onNavigate(1);
+                    }
+                  },
                 ),
                 const SizedBox(height: 24),
 
@@ -717,7 +696,6 @@ class _HomeTabState extends State<_HomeTab> {
                   ),
 
                 // Customer reviews
-                if (_reviews.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 const _SectionLabel(title: 'What Our Customers Say'),
                 const SizedBox(height: 12),
@@ -725,13 +703,11 @@ class _HomeTabState extends State<_HomeTab> {
                   height: 148,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
-                    itemCount: _reviews.length,
+                    itemCount: _kReviews.length,
                     separatorBuilder: (_, __) => const SizedBox(width: 12),
-                    itemBuilder: (_, i) => _ReviewCard(review: _reviews[i]),
+                    itemBuilder: (_, i) => _ReviewCard(review: _kReviews[i]),
                   ),
                 ),
-
-                ],
 
                 // Review CTA
                 const SizedBox(height: 12),
@@ -1226,51 +1202,11 @@ class _ReviewCard extends StatelessWidget {
 
 // ── Featured banner ────────────────────────────────────────────────────────
 
-class _FeaturedBanner extends StatefulWidget {
+class _FeaturedBanner extends StatelessWidget {
   const _FeaturedBanner();
 
   @override
-  State<_FeaturedBanner> createState() => _FeaturedBannerState();
-}
-
-class _FeaturedBannerState extends State<_FeaturedBanner> {
-  String _img = '';
-  String _eyebrow = 'Bridal Special';
-  String _title = 'Complete Bridal Package';
-  String _subtitle = 'Make your special day unforgettable';
-  bool _active = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadBanner();
-  }
-
-  Future<void> _loadBanner() async {
-    try {
-      final res =
-          await http.get(Uri.parse('${AppConstants.apiBaseUrl}/api/banner'));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body)['data'];
-        if (data != null && mounted) {
-          setState(() {
-            _img = (data['imageUrl'] ?? '').toString();
-            final e = (data['eyebrow'] ?? '').toString();
-            final t = (data['title'] ?? '').toString();
-            final sub = (data['subtitle'] ?? '').toString();
-            if (e.isNotEmpty) _eyebrow = e;
-            if (t.isNotEmpty) _title = t;
-            if (sub.isNotEmpty) _subtitle = sub;
-            _active = data['isActive'] != false;
-          });
-        }
-      }
-    } catch (_) {}
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if (!_active) return const SizedBox.shrink();
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
       child: SizedBox(
@@ -1278,22 +1214,11 @@ class _FeaturedBannerState extends State<_FeaturedBanner> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            _img.isNotEmpty
-                ? Image.network(
-                    _img,
-                    fit: BoxFit.cover,
-                    alignment: Alignment.topCenter,
-                    errorBuilder: (_, __, ___) => Image.asset(
-                      'assets/images/gallery_2.jpg',
-                      fit: BoxFit.cover,
-                      alignment: Alignment.topCenter,
-                    ),
-                  )
-                : Image.asset(
-                    'assets/images/gallery_2.jpg',
-                    fit: BoxFit.cover,
-                    alignment: Alignment.topCenter,
-                  ),
+            Image.asset(
+              'assets/images/gallery_2.jpg',
+              fit: BoxFit.cover,
+              alignment: Alignment.topCenter,
+            ),
             // Dark gradient overlay
             Container(
               decoration: BoxDecoration(
@@ -1316,9 +1241,9 @@ class _FeaturedBannerState extends State<_FeaturedBanner> {
                       color: AppColors.primary,
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Text(
-                      _eyebrow,
-                      style: const TextStyle(
+                    child: const Text(
+                      'Bridal Special',
+                      style: TextStyle(
                         color: Colors.black,
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -1327,17 +1252,17 @@ class _FeaturedBannerState extends State<_FeaturedBanner> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    _title,
-                    style: const TextStyle(
+                  const Text(
+                    'Complete Bridal Package',
+                    style: TextStyle(
                       color: Colors.white,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  Text(
-                    _subtitle,
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  const Text(
+                    'Make your special day unforgettable',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
                   ),
                 ],
               ),
@@ -1349,88 +1274,11 @@ class _FeaturedBannerState extends State<_FeaturedBanner> {
   }
 }
 
-class _HomeImg {
-  final String url;
-  final String title;
-  const _HomeImg(this.url, this.title);
-}
-
-class _GallerySection extends StatefulWidget {
+class _GallerySection extends StatelessWidget {
   const _GallerySection();
-  @override
-  State<_GallerySection> createState() => _GallerySectionState();
-}
-
-class _GallerySectionState extends State<_GallerySection> {
-  List<_HomeImg> _images = const [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadHomeImages();
-  }
-
-  Future<void> _loadHomeImages() async {
-    try {
-      final res = await http.get(Uri.parse('${AppConstants.apiBaseUrl}/api/home-images'));
-      if (res.statusCode == 200) {
-        final body = jsonDecode(res.body);
-        final List list = (body is Map && body['data'] is List) ? body['data'] : [];
-        final items = <_HomeImg>[];
-        for (final e in list) {
-          final url = (e['url'] ?? '').toString();
-          if (url.isNotEmpty) items.add(_HomeImg(url, (e['title'] ?? '').toString()));
-        }
-        if (mounted) setState(() => _images = items);
-      }
-    } catch (_) {}
-  }
 
   @override
   Widget build(BuildContext context) {
-    if (_images.isNotEmpty) {
-      return SizedBox(
-        height: 140,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: _images.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 10),
-          itemBuilder: (_, i) {
-            final img = _images[i];
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: SizedBox(
-                width: 110,
-                height: 140,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Image.network(img.url, fit: BoxFit.cover, alignment: Alignment.topCenter,
-                        errorBuilder: (_, __, ___) => Container(color: AppColors.surface)),
-                    if (img.title.isNotEmpty)
-                      Positioned(
-                        bottom: 0, left: 0, right: 0,
-                        child: Container(
-                          padding: const EdgeInsets.fromLTRB(8, 18, 8, 8),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.bottomCenter,
-                              end: Alignment.topCenter,
-                              colors: [Colors.black.withValues(alpha: 0.75), Colors.transparent],
-                            ),
-                          ),
-                          child: Text(img.title,
-                              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      );
-    }
     return SizedBox(
       height: 140,
       child: ListView.separated(
@@ -1560,45 +1408,14 @@ class _InfoRow extends StatelessWidget {
 const _kOfferText =
     'Eid Special: 20% off all bridal packages this week - book now and glow!        Walk-ins welcome, 11 AM to 9 PM daily.';
 
-class _OfferBar extends StatefulWidget {
+class _OfferBar extends StatelessWidget {
   const _OfferBar();
   @override
-  State<_OfferBar> createState() => _OfferBarState();
-}
-
-class _OfferBarState extends State<_OfferBar> {
-  String _text = _kOfferText;
-  bool _active = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadAnnouncement();
-  }
-
-  Future<void> _loadAnnouncement() async {
-    try {
-      final res = await http.get(
-          Uri.parse('${AppConstants.apiBaseUrl}/api/announcement'));
-      if (res.statusCode == 200) {
-        final body = jsonDecode(res.body);
-        final data = (body is Map) ? body['data'] : null;
-        if (data is Map) {
-          final t = (data['text'] ?? '').toString().trim();
-          final a = data['isActive'] != false;
-          if (mounted) setState(() { _active = a; if (t.isNotEmpty) _text = t; });
-        }
-      }
-    } catch (_) {}
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if (!_active) return const SizedBox.shrink();
     return SizedBox(
       height: 38,
       child: Marquee(
-        text: _text,
+        text: _kOfferText,
         style: const TextStyle(
           color: Color(0xFF1A1306),
           fontSize: 13,

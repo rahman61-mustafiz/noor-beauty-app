@@ -43,13 +43,13 @@ class StorageService {
   }) async {
     await _prefs.setString(StorageKeys.userId, userId);
     await _prefs.setString(StorageKeys.userName, name);
-    if (phone != null) await _prefs.setString('user_phone', phone);
+    if (phone != null) await _prefs.setString(StorageKeys.userPhone, phone);
     if (email != null) await _prefs.setString(StorageKeys.userEmail, email);
   }
 
   String? getUserId()    => _prefs.getString(StorageKeys.userId);
   String? getUserName()  => _prefs.getString(StorageKeys.userName);
-  String? getUserPhone() => _prefs.getString('user_phone');
+  String? getUserPhone() => _prefs.getString(StorageKeys.userPhone);
   String? getUserEmail() => _prefs.getString(StorageKeys.userEmail);
 
   // --- Favorites ---
@@ -106,12 +106,18 @@ class StorageService {
 
   // --- Clear ---
 
-  Future<void> clearCustomerSession() async {
+  Future<void> clearCustomerSession({bool clearProfileData = false}) async {
     await _prefs.remove(StorageKeys.accessToken);
     await _prefs.remove(StorageKeys.refreshToken);
     await _prefs.remove(StorageKeys.userId);
     await _prefs.remove(StorageKeys.userName);
     await _prefs.remove(StorageKeys.userEmail);
+    await _prefs.remove(StorageKeys.userPhone);
+    if (clearProfileData) {
+      await _prefs.remove('profile_email');
+      await _prefs.remove('profile_birthday');
+      await _prefs.remove('profile_image_path');
+    }
   }
 
   Future<void> clearAll() async {

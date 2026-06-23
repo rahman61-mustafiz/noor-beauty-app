@@ -3,7 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/auth_service.dart';
+import '../../utils/colors.dart';
 import '../../utils/constants.dart';
+import '../../utils/validators.dart';
+import '../../widgets/custom_button.dart';
 
 class PhoneLoginScreen extends StatefulWidget {
   const PhoneLoginScreen({super.key});
@@ -13,36 +16,8 @@ class PhoneLoginScreen extends StatefulWidget {
 }
 
 class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
-  final _ctrl    = TextEditingController();
+  final _ctrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  bool _submitting = false;
-
-  String? _validate(String? v) {
-    if (v == null || v.trim().isEmpty) return 'Enter your phone number';
-    final cleaned = v.replaceAll(RegExp(r'[\s\-()]'), '');
-    if (cleaned.length < 7) return 'Enter a valid phone number';
-    return null;
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _submitting = true);
-    final phone = AppConstants.normalizePhone(_ctrl.text.trim());
-    final auth  = context.read<AuthService>();
-    final ok    = await auth.requestOtp(phone);
-    if (!mounted) return;
-    setState(() => _submitting = false);
-    if (ok) {
-      Navigator.pushNamed(context, '/otp-verify', arguments: phone);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(auth.error ?? 'Failed to send OTP. Try again.'),
-          backgroundColor: const Color(0xFFE53935),
-        ),
-      );
-    }
-  }
 
   @override
   void dispose() {
@@ -50,8 +25,39 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
     super.dispose();
   }
 
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    String phone;
+    try {
+      phone = AppConstants.normalizePhone(_ctrl.text.trim());
+    } on FormatException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+      return;
+    }
+
+    final auth = context.read<AuthService>();
+    final ok = await auth.requestOtp(phone);
+    if (!mounted) return;
+
+    if (ok) {
+      Navigator.pushNamed(context, '/otp-verify', arguments: phone);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(auth.error ?? 'Failed to send OTP. Try again.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthService>();
+
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -65,29 +71,31 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                 Center(
                   child: Text(
                     AppConstants.appName,
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFFD4AF37),
-                    ),
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                          color: AppColors.primary,
+                        ),
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Center(
+                Center(
                   child: Text(
                     'Beauty & Wellness, Dhaka',
-                    style: TextStyle(color: Color(0xFF9E9E9E), fontSize: 14),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
                   ),
                 ),
                 const Spacer(flex: 2),
-                const Text(
+                Text(
                   'Enter your phone number',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   "We'll send you a one-time code to verify your number.",
-                  style: TextStyle(color: Color(0xFF9E9E9E), fontSize: 14),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
                 ),
                 const SizedBox(height: 28),
                 TextFormField(
@@ -101,43 +109,21 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                     labelText: 'Phone number',
                     hintText: '01XXXXXXXXX  or  +1...',
                     prefixIcon: Icon(Icons.phone_outlined),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.all(Radius.circular(12)),
-                    ),
                   ),
-                  validator: _validate,
+                  validator: Validators.validatePhone,
                   onFieldSubmitted: (_) => _submit(),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'BD numbers (01...) are auto-formatted. For other countries include the country code (+44, +1, etc.).',
-                  style: TextStyle(color: Color(0xFF9E9E9E), fontSize: 12),
+                Text(
+                  'Bangladesh numbers: enter without country code (01…). '
+                  'Other countries: include country code (+44, +1, etc.).',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 28),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: _submitting ? null : _submit,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFD4AF37),
-                      foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: _submitting
-                        ? const SizedBox(
-                            width: 22, height: 22,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.black),
-                          )
-                        : const Text(
-                            'Send Code',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w600),
-                          ),
-                  ),
+                CustomButton(
+                  label: 'Send Code',
+                  isLoading: auth.isLoading,
+                  onPressed: _submit,
                 ),
                 const Spacer(flex: 3),
               ],

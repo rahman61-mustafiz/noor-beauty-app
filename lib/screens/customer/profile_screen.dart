@@ -105,11 +105,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
-    if (confirmed == true && mounted) {
-      await context.read<AuthService>().deleteAccount();
-      if (mounted) {
-        Navigator.pushReplacementNamed(context, '/phone-login');
-      }
+    if (confirmed != true || !mounted) return;
+
+    final auth = context.read<AuthService>();
+    final deleted = await auth.deleteAccount();
+    if (!mounted) return;
+
+    if (deleted) {
+      Navigator.pushReplacementNamed(context, '/phone-login');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(auth.error ?? 'Could not delete account'),
+          backgroundColor: AppColors.error,
+        ),
+      );
     }
   }
 
@@ -361,8 +371,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 16),
 
-            // ── Preferences ────────────────────────────────────────────────
-            _sectionHeader('Preferences'),
+            // ── Settings ───────────────────────────────────────────────────
+            _sectionHeader('Settings'),
             Card(
               margin: EdgeInsets.zero,
               shape: RoundedRectangleBorder(
@@ -386,8 +396,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 16),
 
-            // ── Danger zone ────────────────────────────────────────────────
-            _sectionHeader('Danger Zone'),
+            // ── Account deletion (App Store / Play Store requirement) ─────
+            _sectionHeader('Account'),
             Card(
               margin: EdgeInsets.zero,
               shape: RoundedRectangleBorder(
@@ -395,10 +405,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: ListTile(
                 leading: const Icon(Icons.delete_forever_outlined,
                     color: AppColors.error),
-                title: const Text('Delete Account',
+                title: const Text('Delete my account',
                     style: TextStyle(color: AppColors.error)),
                 subtitle: const Text(
-                    'Permanently delete your account and all data',
+                    'Permanently delete your account and all personal data',
                     style: TextStyle(
                         fontSize: 12, color: AppColors.textSecondary)),
                 trailing: const Icon(Icons.chevron_right,

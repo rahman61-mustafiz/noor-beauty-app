@@ -22,43 +22,25 @@ class Validators {
     return null;
   }
 
+  /// Validates phone input for OTP login.
+  /// BD numbers: local format (01…) — country code added automatically.
+  /// Foreign numbers: must include + or 00 country code prefix.
   static String? validatePhone(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'Phone number is required';
     }
-    final cleaned = value.replaceAll(RegExp(r'[\s\-]'), '');
-    final bdRegex = RegExp(r'^(\+880|880|0)1[3-9]\d{8}$');
-    if (!bdRegex.hasMatch(cleaned)) {
-      return 'Enter a valid Bangladesh phone number';
-    }
-    return null;
-  }
+    final cleaned = value.replaceAll(RegExp(r'[\s\-()]'), '');
 
-  static String? validatePassword(String? value) {
-    if (value == null || value.isEmpty) {
-      return 'Password is required';
+    if (cleaned.startsWith('+') || cleaned.startsWith('00')) {
+      if (cleaned.length < 10) {
+        return 'Enter a valid international phone number';
+      }
+      return null;
     }
-    if (value.length < 8) {
-      return 'Password must be at least 8 characters';
-    }
-    if (!RegExp(r'[A-Z]').hasMatch(value)) {
-      return 'Password must contain an uppercase letter';
-    }
-    if (!RegExp(r'[0-9]').hasMatch(value)) {
-      return 'Password must contain a number';
-    }
-    if (!RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(value)) {
-      return 'Password must contain a special character';
-    }
-    return null;
-  }
 
-  static String? validateConfirmPassword(String? value, String password) {
-    if (value == null || value.isEmpty) {
-      return 'Please confirm your password';
-    }
-    if (value != password) {
-      return 'Passwords do not match';
+    final bdLocal = RegExp(r'^0?1[3-9]\d{8}$');
+    if (!bdLocal.hasMatch(cleaned)) {
+      return 'Enter a valid BD number (01…) or international (+country code)';
     }
     return null;
   }

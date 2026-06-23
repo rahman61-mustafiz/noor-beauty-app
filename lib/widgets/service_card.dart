@@ -24,14 +24,16 @@ class ServiceCard extends StatefulWidget {
 
 class _ServiceCardState extends State<ServiceCard> {
   bool _hovered = false;
+  bool _pressed = false;
   bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
+    final active = _hovered || _pressed;
     final borderColor = widget.isSelected
         ? AppColors.primary
-        : _hovered
-            ? AppColors.accentHover.withValues(alpha: 0.7)
+        : active
+            ? AppColors.accentHover
             : AppColors.cardBorder;
 
     return MouseRegion(
@@ -43,13 +45,25 @@ class _ServiceCardState extends State<ServiceCard> {
         decoration: BoxDecoration(
           color: widget.isSelected
               ? AppColors.primary.withValues(alpha: 0.12)
-              : _hovered
+              : active
                   ? AppColors.surface.withValues(alpha: 0.95)
                   : AppColors.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: borderColor, width: widget.isSelected ? 2 : 1),
-          boxShadow: _hovered
-              ? [BoxShadow(color: AppColors.primary.withValues(alpha: 0.15), blurRadius: 12, offset: const Offset(0, 4))]
+          border: Border.all(color: borderColor, width: (widget.isSelected || active) ? 2 : 1),
+          boxShadow: active
+              ? [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.45),
+                    blurRadius: 20,
+                    spreadRadius: 1,
+                    offset: const Offset(0, 6),
+                  ),
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.20),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
               : null,
         ),
         child: Material(
@@ -57,28 +71,28 @@ class _ServiceCardState extends State<ServiceCard> {
           borderRadius: BorderRadius.circular(16),
           child: Column(
             children: [
-              // ── Main row ────────────────────────────────────────────────
               InkWell(
                 onTap: widget.onSubOptionBook != null
                     ? () => setState(() => _expanded = !_expanded)
                     : widget.onTap,
+                onHighlightChanged: (v) => setState(() => _pressed = v),
                 borderRadius: BorderRadius.vertical(
                   top: const Radius.circular(16),
                   bottom: _expanded ? Radius.zero : const Radius.circular(16),
                 ),
                 hoverColor: Colors.transparent,
-                splashColor: AppColors.accent.withValues(alpha: 0.1),
-                highlightColor: AppColors.accent.withValues(alpha: 0.05),
+                splashColor: AppColors.primary.withValues(alpha: 0.22),
+                highlightColor: AppColors.primary.withValues(alpha: 0.12),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
-                      // Icon box
                       AnimatedContainer(
                         duration: AppTheme.hoverDuration,
-                        width: 56, height: 56,
+                        width: 56,
+                        height: 56,
                         decoration: BoxDecoration(
-                          gradient: _hovered || widget.isSelected
+                          gradient: active || widget.isSelected
                               ? AppColors.accentGradient
                               : AppColors.primaryGradient,
                           borderRadius: BorderRadius.circular(14),
@@ -86,7 +100,6 @@ class _ServiceCardState extends State<ServiceCard> {
                         child: Icon(widget.service.iconData, color: AppColors.secondary, size: 28),
                       ),
                       const SizedBox(width: 16),
-                      // Text
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -106,9 +119,9 @@ class _ServiceCardState extends State<ServiceCard> {
                             Row(
                               children: [
                                 Text(
-                                  '${widget.service.baseDurationMin}–${widget.service.baseDurationMax} min',
+                                  '${widget.service.baseDurationMin}\u2013${widget.service.baseDurationMax} min',
                                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                        color: _hovered ? AppColors.accentHover : AppColors.primary,
+                                        color: active ? AppColors.accentHover : AppColors.primary,
                                       ),
                                 ),
                                 if (widget.service.startingPrice > 0) ...[
@@ -120,9 +133,9 @@ class _ServiceCardState extends State<ServiceCard> {
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Text(
-                                      'From ৳${widget.service.startingPrice}',
+                                      'From \u09F3${widget.service.startingPrice}',
                                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                            color: _hovered ? AppColors.accentHover : AppColors.primary,
+                                            color: active ? AppColors.accentHover : AppColors.primary,
                                             fontWeight: FontWeight.w600,
                                           ),
                                     ),
@@ -133,7 +146,6 @@ class _ServiceCardState extends State<ServiceCard> {
                           ],
                         ),
                       ),
-                      // Expand arrow or selected check
                       if (widget.isSelected)
                         const Icon(Icons.check_circle, color: AppColors.primary)
                       else if (widget.onSubOptionBook != null)
@@ -146,8 +158,6 @@ class _ServiceCardState extends State<ServiceCard> {
                   ),
                 ),
               ),
-
-              // ── Sub-options ──────────────────────────────────────────────
               if (_expanded && widget.service.subOptions.isNotEmpty)
                 Container(
                   decoration: BoxDecoration(
@@ -198,7 +208,7 @@ class _SubOptionRow extends StatelessWidget {
             ),
           ),
           Text(
-            '৳${option.price}',
+            '\u09F3${option.price}',
             style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 14),
           ),
           const SizedBox(width: 12),

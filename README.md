@@ -1,194 +1,148 @@
-# Noor Beauty Salon
+# Noor Beauty Salon — Mobile App
 
-A Flutter mobile app for **Noor Beauty Salon**, a beauty and wellness salon in Dhaka, Bangladesh. Customers can browse services, book appointments, and leave reviews. Admins manage bookings, staff, services, and analytics via a secure MFA-protected dashboard.
+Developer handoff & technical documentation.
 
-## Features
+> The Android build is complete, signed, and tested (a release App Bundle is produced). This handoff covers configuring and publishing the **iOS** build. The codebase is **Flutter (cross-platform)**, so the remaining work is largely iOS *configuration* — not new feature development.
 
-### Customer App
-- Email/phone registration with email verification and password reset
-- Browse 11 services (Haircut, Styling, Color, Hair treatment, Body spa, Mani/pedi, Bridal, Facial, Beautician classes, Waxing, Mehedi)
-- Multi-step booking: service → duration → stylist → date/time → confirm
-- Booking history with cancel/reschedule
-- Favorite stylists
-- Star ratings and text reviews
-- Push notifications (booking confirmation, 24h reminder, cancellations, review prompts)
+---
 
-### Admin Dashboard
-- Email + password login with **TOTP MFA** (Google Authenticator / Authy)
-- 30-minute session timeout on inactivity
-- Dashboard, bookings (calendar + list), staff, services, customers, reviews, analytics
-- Salon settings (hours, holidays, notifications)
+## 1. Tech Stack
 
-## Tech Stack
+**Mobile app**
+- **Flutter (Dart)** — single codebase for Android & iOS
+- REST calls via the `http` package (points to the live backend URL)
+- Push notifications: **Firebase Cloud Messaging** (`firebase_core`, `firebase_messaging`)
+- Local notifications: `flutter_local_notifications` — **pinned to `^19.5.0`** (v20+ breaks current code)
+- Offer marquee: `marquee`
+- App icons: `flutter_launcher_icons`
+- Android specifics: core library desugaring enabled (`desugar_jdk_libs` 2.1.4), `compileSdk 34`
 
-- **Flutter** (iOS + Android)
-- **Provider** for state management
-- **REST API** on custom VPS
-- **Firebase Cloud Messaging** + **Flutter Local Notifications**
-- **JWT** authentication with refresh tokens
-- **TOTP MFA** for admin (via `totp` + `qr_flutter`)
+**Backend** (separate repo, already deployed — you do **not** need to run it for app work)
+- Node.js + Express
+- MongoDB via Mongoose
+- Auth: JWT; admin MFA via TOTP (`otplib`)
+- Image storage: AWS S3 (`@aws-sdk/client-s3`, `multer`)
+- SMS OTP: AlphaSMS provider (via `axios`)
+- Security: `helmet`, `cors`, `express-rate-limit`
+- Hosted on **Railway** (auto-deploys on push)
 
-## Prerequisites
+**Admin panel**: a single-file HTML/JS SaaS panel that calls the same backend (used by salon staff). It is **not** part of the mobile build.
 
-- [Flutter SDK](https://docs.flutter.dev/get-started/install) 3.0+
-- Android Studio / Xcode (for device builds)
-- A VPS running the Noor Beauty REST API
-- Firebase project (config loaded from backend — no keys in source)
+---
 
-## Setup
+## 2. Repositories & Live Services
 
-### 1. Clone and install dependencies
+| Item | Value |
+|---|---|
+| App repo (private) | `rahman61-mustafiz/noor-beauty-app` |
+| Backend repo (public) | `rahman61-mustafiz/noor-beauty-backend` |
+| Backend base URL | `https://noor-beauty-backend-production.up.railway.app` |
+| Android applicationId / iOS bundle id | `com.noorbeautysalon.app` |
 
-```bash
-cd noor-beauty-app
-flutter pub get
-```
+---
 
-This generates `pubspec.lock` with locked dependency versions.
+## 3. Functional Scope (Requirements Reference)
 
-### 2. Configure API URL
+There is no separate formal requirements document; this section is the functional spec.
 
-Edit `lib/utils/constants.dart` and set your VPS base URL:
+**Authentication**
+- Phone-number **OTP login, Bangladesh numbers only**. Accepts `01XXXXXXXXX`, `1XXXXXXXXX`, `+8801XXXXXXXXX`, `8801XXXXXXXXX`; foreign numbers are rejected. OTP is delivered by SMS and expires in 5 minutes.
 
-```dart
-static const String apiBaseUrl = 'https://your-vps-domain.com';
-```
+**Customer home screen**
+- Top offer/announcement **marquee** (text fetched live)
+- **Featured banner** — image + 3 text lines, fetched live, can be toggled on/off
+- **Services** list
+- **Gallery / Home images** — fetched live, with a built-in fallback
+- **Customer reviews** — fetched live, plus a "Rate us" submission
 
-No trailing slash. All API paths are appended from `ApiEndpoints`.
+**Bookings** — create bookings (auto-confirmed).
+**Notifications** — Firebase push + runtime permission (Android 13+ `POST_NOTIFICATIONS`).
+**Account** — in-app account deletion (a public web page also exists for store-compliance).
 
-### 3. Firebase setup
+**Admin (via the SaaS web panel, not the app)** — dashboard, bookings, services & service types, staff, reviews, gallery, home images, featured banner, announcement/offer text, ledger/account register, customers.
 
-Firebase credentials are **not** hardcoded. The app fetches config from:
+---
 
-```
-GET /api/config/firebase
-```
+## 4. Theme
+- Primary gold `#D4AF37`, dark `#1A1A1A`
+- Font: **Open Sans**
 
-Your backend should return:
+---
 
-```json
-{
-  "apiKey": "...",
-  "appId": "...",
-  "messagingSenderId": "...",
-  "projectId": "..."
-}
-```
-
-For local development before the backend is ready:
-
-1. Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
-2. Add Android and iOS apps with package `com.noorbeauty.salon`
-3. Place `google-services.json` in `android/app/` (gitignored)
-4. Place `GoogleService-Info.plist` in `ios/Runner/` (gitignored)
-
-### 4. Android setup
-
-```bash
-# Ensure local.properties has flutter.sdk path (auto-generated by flutter pub get)
-flutter build apk --debug
-```
-
-Requirements:
-- `minSdk 21`
-- Internet, notification, and camera permissions are in `AndroidManifest.xml`
-
-Run on device/emulator:
-
-```bash
-flutter run
-```
-
-### 5. iOS setup
-
-```bash
-cd ios
-pod install
-cd ..
-flutter run
-```
-
-Requirements:
-- iOS 12.0+
-- Xcode 14+
-- Valid signing team in Xcode for physical devices
-
-## Project Structure
-
+## 5. Project Structure (key paths)
 ```
 lib/
-├── main.dart                 # App entry, routing, themes
-├── models/                   # User, Stylist, Service, Booking, Review, AdminUser
-├── services/                 # API, Auth, Booking, Notification, Storage
-├── screens/
-│   ├── auth/                 # Login, Signup, Email Verify
-│   ├── customer/             # Home, Services, Booking, Profile, Reviews
-│   └── admin/                # Login, MFA, Dashboard, Management screens
-├── widgets/                  # Reusable UI components
-└── utils/                    # Constants, colors, validators
+  screens/customer/home_screen.dart   # home: banner, gallery, reviews, offer marquee
+  ...                                 # other screens, services, constants, theme
+assets/
+  images/                             # images + app-icon source
+android/
+  app/build.gradle                    # applicationId com.noorbeautysalon.app
+  app/google-services.json            # Firebase Android config (included in zip)
+  key.properties                      # signing config — NOT included (secret)
+ios/                                  # to be generated / configured (see §7)
+pubspec.yaml
 ```
 
-## API Endpoints
+---
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/register` | Customer registration |
-| POST | `/api/auth/login` | Customer login |
-| POST | `/api/auth/verify-email` | Email verification |
-| POST | `/api/auth/password-reset` | Password reset |
-| POST | `/api/auth/admin-login` | Admin login (returns MFA session) |
-| POST | `/api/auth/verify-mfa` | Admin MFA verification |
-| GET | `/api/services` | List services |
-| GET | `/api/staff` | List stylists |
-| POST | `/api/bookings` | Create booking |
-| GET | `/api/bookings/customer/:id` | Customer bookings |
-| POST | `/api/reviews` | Submit review |
-| GET | `/api/admin/dashboard` | Admin dashboard stats |
-| GET | `/api/admin/bookings` | Admin bookings |
-| GET | `/api/admin/customers` | Customer list |
-| GET | `/api/admin/analytics` | Analytics data |
-
-## Hardcoded Seed Data
-
-Until the API is live, the app ships with:
-
-- **11 services** in `lib/models/service.dart` (`ServiceData.initialServices`)
-- **10 stylists** in `lib/models/stylist.dart` (`StylistData.initialStylists`)
-
-These are used as fallbacks when API calls fail.
-
-## Admin MFA
-
-1. Admin logs in with email/password
-2. Backend returns `sessionToken` and optionally `mfaSecret`
-3. Admin enters 6-digit TOTP code from Google Authenticator
-4. QR code can be displayed for initial MFA setup (`qr_flutter`)
-5. Session expires after **30 minutes** of inactivity
-
-## Security Notes
-
-- JWT tokens stored in `shared_preferences` (use `flutter_secure_storage` in production for enhanced security)
-- Password validation: min 8 chars, uppercase, number, special character
-- No payment processing — cash at salon only
-- No Firebase keys in source code
-
-## Running Tests
-
+## 6. Build & Run — Android (already working)
 ```bash
-flutter test
-flutter analyze
+flutter pub get
+flutter run                 # debug build on device/emulator
+flutter build appbundle     # signed release AAB
+# output: build/app/outputs/bundle/release/app-release.aab
 ```
+Release signing uses `android/key.properties` + an upload keystore — both held by the owner and **not** in this zip.
 
-## Build Release
+---
 
-```bash
-# Android
-flutter build appbundle --release
+## 7. iOS Setup — to be completed by the iOS developer
+The Dart code is cross-platform; the work below is iOS configuration/publishing:
 
-# iOS
-flutter build ios --release
-```
+1. Generate the iOS project if absent: `flutter create --platforms=ios .`, then `cd ios && pod install`
+2. Set **Bundle Identifier** to `com.noorbeautysalon.app`
+3. **App icon** — regenerate iOS icons via `flutter_launcher_icons` (source asset in `assets/images/`)
+4. **Firebase (iOS)** — add an iOS app in the project's Firebase console, download **`GoogleService-Info.plist`**, place it in `ios/Runner/`
+5. **Push notifications** — create an **APNs Auth Key (.p8)** in the Apple Developer account, upload it to Firebase; in Xcode enable **Push Notifications** + **Background Modes → Remote notifications**
+6. **Info.plist** — add usage strings (notifications; photo library if the image picker is used)
+7. **Signing & ship** — select the Apple Developer team, archive in Xcode, upload to App Store Connect
 
-## License
+> The Firebase project is owned by the app owner. Coordinate with them to register the iOS app / obtain `GoogleService-Info.plist` and to create the APNs key.
 
-Proprietary — Noor Beauty Salon, Dhaka, Bangladesh.
+---
+
+## 8. Backend / API (reference only — deployed & off-limits)
+Base URL: `https://noor-beauty-backend-production.up.railway.app`
+The app talks to this live URL; you do not need to run the backend locally.
+
+**Public endpoints used by the app**
+- `POST /api/auth/...` — phone OTP request & verify (JWT issued on success)
+- `GET /api/services`, `GET /api/service-types`, `GET /api/staff`
+- `POST /api/bookings` — create a booking
+- `GET /api/reviews` (list) / `POST /api/reviews` (submit)
+- `GET /api/gallery`, `GET /api/home-images`
+- `GET /api/announcement` — offer marquee text
+- `GET /api/banner` — featured banner content
+
+**Admin endpoints** (`/api/admin/*`, TOTP-protected) power the SaaS panel: dashboard, customers, bookings, staff, services, service-types, reviews, analytics, reports, ledger, gallery, announcement, banner, home-images.
+
+Backend environment variables (set on Railway; **secrets not included**): `MONGODB_URI`, `JWT_SECRET`, `SMS_PROVIDER`, `SMS_ALPHA_API_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_MFA_SECRET`, `AWS_REGION`, `S3_BUCKET`.
+
+---
+
+## 9. Secrets & What's NOT in this Zip (important)
+Excluded for security; handle separately:
+- Android upload keystore (`*.jks`) and `android/key.properties` — Android signing only (the iOS build uses its own Apple signing)
+- `android/local.properties` — machine-specific SDK paths (auto-generated by Flutter)
+- Backend `.env` / secrets — backend is already deployed
+
+Included for convenience: `android/app/google-services.json` (Firebase **Android** client config).
+
+---
+
+## 10. Status & Roadmap
+- ✅ **Android** — built, signed, tested; release AAB produced
+- ⏳ **iOS** — configuration + App Store submission (this handoff)
+- ✅ **Backend** — deployed & stable on Railway
+- 🔜 Pending product items: admin ban/delete users, UI polish (card hover/glow), further design tweaks

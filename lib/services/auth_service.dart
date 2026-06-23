@@ -9,7 +9,8 @@ import 'storage_service.dart';
 class OtpResult {
   final bool success;
   final bool isNewUser;
-  OtpResult({required this.success, required this.isNewUser});
+
+  const OtpResult({required this.success, required this.isNewUser});
 }
 
 class AuthService extends ChangeNotifier {
@@ -20,10 +21,10 @@ class AuthService extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
 
-  User?   get currentUser => _currentUser;
-  bool    get isLoading   => _isLoading;
-  String? get error       => _error;
-  bool    get isLoggedIn  => _currentUser != null;
+  User? get currentUser => _currentUser;
+  bool get isLoading => _isLoading;
+  String? get error => _error;
+  bool get isLoggedIn => _currentUser != null;
 
   Future<void> init() async {
     _storage = await StorageService.getInstance();
@@ -31,42 +32,44 @@ class AuthService extends ChangeNotifier {
     if (token != null && !JwtDecoder.isExpired(token)) {
       _api.setAccessToken(token);
       _currentUser = User(
-        id:        _storage!.getUserId()   ?? '',
-        name:      _storage!.getUserName() ?? '',
-        phone:     _storage!.getUserPhone() ?? '',
+        id: _storage!.getUserId() ?? '',
+        name: _storage!.getUserName() ?? '',
+        phone: _storage!.getUserPhone() ?? '',
         createdAt: DateTime.now(),
       );
     }
     notifyListeners();
   }
 
-  void _setLoading(bool v) { _isLoading = v; notifyListeners(); }
-  void clearError() { _error = null; notifyListeners(); }
+  void clearError() {
+    _error = null;
+    notifyListeners();
+  }
 
-  // ── OTP auth ────────────────────────────────────────────────────────────────
+  void _setLoading(bool value) {
+    _isLoading = value;
+    notifyListeners();
+  }
 
-  /// Step 1: request an OTP to be sent to [phone] (international format).
-  /// Returns true even when the server is unreachable so the UI flow continues.
+  /// Step 1: POST /auth/request-otp
   Future<bool> requestOtp(String phone) async {
     _setLoading(true);
     _error = null;
     try {
       await _api.requestOtp(phone);
       return true;
-    } catch (e) {
-      if (e is ApiException) {
-        _error = e.message;
-        return false;
-      }
-      // Server unreachable → demo mode: let the UI proceed
-      return true;
+    } on ApiException catch (e) {
+      _error = e.message;
+      return false;
+    } catch (_) {
+      _error = 'Network error. Please check your connection and try again.';
+      return false;
     } finally {
       _setLoading(false);
     }
   }
 
-  /// Step 2: verify the OTP code.
-  /// Returns [OtpResult] with success flag and whether this is a brand-new user.
+  /// Step 2: POST /auth/verify-otp — saves session token on success.
   Future<OtpResult> verifyOtp(String phone, String code) async {
     _setLoading(true);
     _error = null;
@@ -75,56 +78,57 @@ class AuthService extends ChangeNotifier {
       await _saveSession(response);
       final isNew = response['isNewUser'] as bool? ?? false;
       return OtpResult(success: true, isNewUser: isNew);
-    } catch (e) {
-      if (e is ApiException) {
-        _error = e.message;
-        return OtpResult(success: false, isNewUser: false);
-      }
-      // Server unreachable → demo mode: create a local session
-      final demoId = 'demo-${phone.replaceAll(RegExp(r'[^0-9]'), '')}';
-      _currentUser = User(id: demoId, name: '', phone: phone, createdAt: DateTime.now());
-      await _storage!.saveUserData(userId: demoId, name: '', phone: phone);
-      notifyListeners();
-      return OtpResult(success: true, isNewUser: true);
+    } on ApiException catch (e) {
+      _error = e.message;
+      return const OtpResult(success: false, isNewUser: false);
+    } catch (_) {
+      _error = 'Network error. Please check your connection and try again.';
+      return const OtpResult(success: false, isNewUser: false);
     } finally {
       _setLoading(false);
     }
   }
 
-  /// Step 3 (first-time only): save the user's name.
+  /// First-time users: save display name after OTP verification.
   Future<void> saveName(String name) async {
     if (_currentUser == null) return;
     _currentUser = _currentUser!.copyWith(name: name);
     await _storage!.saveUserData(
       userId: _currentUser!.id,
-      name:   name,
-      phone:  _currentUser!.phone,
+      name: name,
+      phone: _currentUser!.phone,
     );
     notifyListeners();
-    _api.updateProfile({'name': name}).catchError((_) => <String, dynamic>{});
+    try {
+      await _api.updateProfile({'name': name});
+    } catch (_) {}
   }
-
-  // ── Token refresh ─────────────────────────────────────────────────────────
 
   Future<bool> refreshTokenIfNeeded() async {
     final token = _storage?.getAccessToken();
     if (token == null) return false;
+
     if (!JwtDecoder.isExpired(token)) {
       final expiry = JwtDecoder.getExpirationDate(token);
-      if (expiry.difference(DateTime.now()).inMinutes > AppConstants.jwtRefreshThresholdMinutes) {
+      if (expiry.difference(DateTime.now()).inMinutes >
+          AppConstants.jwtRefreshThresholdMinutes) {
         return true;
       }
     }
+
     final refresh = _storage?.getRefreshToken();
     if (refresh == null) return false;
+
     try {
       final response = await _api.refreshToken(refreshToken: refresh);
-      final newAccess  = response['accessToken'] as String?;
+      final newAccess = response['accessToken'] as String?;
       final newRefresh = response['refreshToken'] as String?;
       if (newAccess != null) {
         await _storage!.saveAccessToken(newAccess);
         _api.setAccessToken(newAccess);
-        if (newRefresh != null) await _storage!.saveRefreshToken(newRefresh);
+        if (newRefresh != null) {
+          await _storage!.saveRefreshToken(newRefresh);
+        }
         return true;
       }
     } catch (_) {
@@ -133,45 +137,56 @@ class AuthService extends ChangeNotifier {
     return false;
   }
 
-  // ── Account deletion ──────────────────────────────────────────────────────
-
+  /// DELETE /auth/account — clears local session only after server confirms.
   Future<bool> deleteAccount() async {
     _setLoading(true);
+    _error = null;
     try {
       await _api.deleteAccount();
-    } catch (_) {}
-    await logout();
-    return true;
+      await logout(clearProfileData: true);
+      return true;
+    } on ApiException catch (e) {
+      _error = e.message;
+      return false;
+    } catch (_) {
+      _error = 'Could not delete account. Please try again.';
+      return false;
+    } finally {
+      _setLoading(false);
+    }
   }
 
-  // ── Logout ────────────────────────────────────────────────────────────────
-
-  Future<void> logout() async {
-    await _storage?.clearCustomerSession();
+  Future<void> logout({bool clearProfileData = false}) async {
+    await _storage?.clearCustomerSession(clearProfileData: clearProfileData);
     _api.setAccessToken(null);
     _currentUser = null;
     notifyListeners();
   }
 
-  // ── Private helpers ───────────────────────────────────────────────────────
-
   Future<void> _saveSession(Map<String, dynamic> response) async {
-    final accessToken  = response['accessToken'] as String? ?? response['token'] as String? ?? '';
+    final accessToken = response['accessToken'] as String? ??
+        response['token'] as String? ??
+        '';
     final refreshToken = response['refreshToken'] as String?;
-    final userData     = response['user'] as Map<String, dynamic>? ?? response;
+    final userData =
+        response['user'] as Map<String, dynamic>? ?? response;
 
-    if (accessToken.isNotEmpty) {
-      await _storage!.saveAccessToken(accessToken);
-      _api.setAccessToken(accessToken);
+    if (accessToken.isEmpty) {
+      throw const ApiException('No session token received from server');
     }
-    if (refreshToken != null) await _storage!.saveRefreshToken(refreshToken);
+
+    await _storage!.saveAccessToken(accessToken);
+    _api.setAccessToken(accessToken);
+    if (refreshToken != null) {
+      await _storage!.saveRefreshToken(refreshToken);
+    }
 
     _currentUser = User.fromJson(userData);
     await _storage!.saveUserData(
       userId: _currentUser!.id,
-      name:   _currentUser!.name,
-      phone:  _currentUser!.phone,
-      email:  _currentUser!.email,
+      name: _currentUser!.name,
+      phone: _currentUser!.phone,
+      email: _currentUser!.email,
     );
     notifyListeners();
   }

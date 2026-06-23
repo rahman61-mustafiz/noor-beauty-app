@@ -130,7 +130,10 @@ class ApiService {
     required String phone,
     required String code,
   }) async {
-    final result = await post(ApiEndpoints.verifyOtp, body: {'phone': phone, 'code': code});
+    final result = await post(
+      ApiEndpoints.verifyOtp,
+      body: {'phone': phone, 'code': code, 'otp': code},
+    );
     return result as Map<String, dynamic>;
   }
 

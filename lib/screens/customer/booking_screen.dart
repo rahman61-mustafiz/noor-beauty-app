@@ -37,6 +37,7 @@ class _BookingScreenState extends State<BookingScreen> {
 
   SalonService? _service;
   ServiceSubOption? _subOption;
+  ServiceVariant? _variant;
   DateTime _date = DateTime.now().add(const Duration(days: 1));
   String? _time;
   bool _isBooked = false;
@@ -60,14 +61,21 @@ class _BookingScreenState extends State<BookingScreen> {
   }
 
   int get _duration => _subOption?.durationMin ?? _service?.baseDurationMin ?? 60;
-  int get _price    => _subOption?.price ?? _service?.startingPrice ?? 0;
+  int get _price    => _variant?.price ?? _subOption?.price ?? _service?.startingPrice ?? 0;
+
+  String get _optLabel {
+    final base = _subOption?.name ?? _service?.name ?? '';
+    return _variant != null ? '$base - ${_variant!.label}' : base;
+  }
 
   List<String> get _timeSlots =>
       context.read<BookingService>().getAvailableTimeSlots(date: _date, durationMinutes: _duration, openTime: '11:00');
 
+  bool get _needsVariant => _subOption != null && _subOption!.variants.isNotEmpty && _variant == null;
+
   bool get _canProceed {
     if (_step == 0) return _service != null;
-    if (_step == 1) return _time != null;
+    if (_step == 1) return _time != null && !_needsVariant;
     return true;
   }
 
@@ -80,6 +88,8 @@ class _BookingScreenState extends State<BookingScreen> {
       customerId:      auth.currentUser?.id ?? 'guest',
       stylistId:       '',   // assigned by salon
       serviceId:       _service!.id,
+      serviceName:     _optLabel,
+      price:           _price,
       bookingDate:     _date,
       startTime:       _time!,
       durationMinutes: _duration,
@@ -315,7 +325,7 @@ class _BookingScreenState extends State<BookingScreen> {
           return Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: GestureDetector(
-              onTap: () => setState(() { _service = svc; _subOption = null; }),
+              onTap: () => setState(() { _service = svc; _subOption = null; _variant = null; }),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 padding: const EdgeInsets.all(14),
@@ -354,7 +364,7 @@ class _BookingScreenState extends State<BookingScreen> {
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: GestureDetector(
-                onTap: () => setState(() => _subOption = opt),
+                onTap: () => setState(() { _subOption = opt; _variant = null; }),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -389,6 +399,45 @@ class _BookingScreenState extends State<BookingScreen> {
 
   // ── Step 1: Date & time ──────────────────────────────────────────────────
 
+  Widget _buildSizePicker() {
+    final opt = _subOption!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Choose a Size', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: opt.variants.map((v) {
+            final sel = _variant?.label == v.label;
+            return GestureDetector(
+              onTap: () => setState(() => _variant = v),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: sel ? AppColors.primary.withValues(alpha: 0.12) : AppColors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: sel ? AppColors.primary : AppColors.cardBorder, width: sel ? 2 : 1),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(v.label, style: TextStyle(fontWeight: sel ? FontWeight.w600 : FontWeight.normal, color: sel ? AppColors.primary : AppColors.textPrimary)),
+                    const SizedBox(width: 8),
+                    Text('\u09F3${v.price}', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary)),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 20),
+      ],
+    );
+  }
+
   Widget _buildDateTimeStep() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -422,6 +471,7 @@ class _BookingScreenState extends State<BookingScreen> {
             ),
           ),
 
+        if (_subOption != null && _subOption!.variants.isNotEmpty) _buildSizePicker(),
         const Text('Select Date & Time', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
         // Compact horizontal date strip — next 60 days
@@ -552,7 +602,7 @@ class _BookingScreenState extends State<BookingScreen> {
           child: Column(
             children: [
               _row('Service',  _service?.name ?? '—'),
-              if (_subOption != null) _row('Package', _subOption!.name),
+              if (_subOption != null) _row('Package', _optLabel),
               _row('Duration', '$_duration min'),
               _row('Date',     dateStr),
               _row('Time',     _time ?? '—'),

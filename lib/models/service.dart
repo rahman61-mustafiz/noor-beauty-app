@@ -1,26 +1,42 @@
 import 'package:flutter/material.dart';
 
+class ServiceVariant {
+  final String label;
+  final int price;
+  const ServiceVariant({required this.label, required this.price});
+  factory ServiceVariant.fromJson(Map<String, dynamic> j) =>
+      ServiceVariant(label: j['label'] as String? ?? '', price: j['price'] as int? ?? 0);
+  Map<String, dynamic> toJson() => {'label': label, 'price': price};
+}
+
 class ServiceSubOption {
   final String name;
   final int durationMin;
+  final List<ServiceVariant> variants;
   final int price;
 
   const ServiceSubOption({
     required this.name,
     required this.durationMin,
     required this.price,
+    this.variants = const [],
   });
 
   factory ServiceSubOption.fromJson(Map<String, dynamic> json) => ServiceSubOption(
         name: json['name'] as String? ?? '',
         durationMin: json['durationMin'] as int? ?? 30,
         price: json['price'] as int? ?? 0,
+        variants: (json['variants'] as List<dynamic>?)
+                ?.map((e) => ServiceVariant.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
       );
 
   Map<String, dynamic> toJson() => {
         'name': name,
         'durationMin': durationMin,
         'price': price,
+        'variants': variants.map((e) => e.toJson()).toList(),
       };
 }
 
