@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
-import 'package:video_player/video_player.dart';
 
 import '../../utils/colors.dart';
 import '../../utils/constants.dart';
@@ -239,13 +238,7 @@ class _WorkCardState extends State<_WorkCard> {
               onTapCancel: () => _set(false),
               onTap: () {
                 _set(false);
-                if (w.isYoutube && w.videoUrl != null) {
-                  _open(w.videoUrl!);
-                } else if (w.videoUrl != null) {
-                  Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => _VideoPage(url: w.videoUrl!, title: w.label),
-                  ));
-                }
+                if (w.videoUrl != null) _open(w.videoUrl!);
               },
               child: Stack(
                 fit: StackFit.expand,
@@ -306,66 +299,3 @@ class _WorkCardState extends State<_WorkCard> {
       );
 }
 
-class _VideoPage extends StatefulWidget {
-  final String url;
-  final String title;
-  const _VideoPage({required this.url, required this.title});
-  @override
-  State<_VideoPage> createState() => _VideoPageState();
-}
-
-class _VideoPageState extends State<_VideoPage> {
-  late VideoPlayerController _c;
-  bool _ready = false;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _c = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-      ..initialize().then((_) {
-        if (!mounted) return;
-        setState(() => _ready = true);
-        _c.play();
-        _c.addListener(_tick);
-      }).catchError((e) {
-        if (!mounted) return;
-        setState(() => _error = e.toString());
-      });
-  }
-
-  void _tick() { if (mounted) setState(() {}); }
-
-  @override
-  void dispose() {
-    _c.removeListener(_tick);
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white, title: Text(widget.title)),
-      body: Center(
-        child: _error != null
-            ? Padding(padding: const EdgeInsets.all(24),
-                child: Text('Video load hoyni:\n${_error!}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70)))
-            : _ready
-                ? Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    AspectRatio(aspectRatio: _c.value.aspectRatio == 0 ? 16 / 9 : _c.value.aspectRatio, child: VideoPlayer(_c)),
-                    const SizedBox(height: 8),
-                    VideoProgressIndicator(_c, allowScrubbing: true, colors: VideoProgressColors(playedColor: AppColors.primary)),
-                  ])
-                : CircularProgressIndicator(color: AppColors.primary),
-      ),
-      floatingActionButton: _ready
-          ? FloatingActionButton(
-              backgroundColor: AppColors.primary, foregroundColor: Colors.black,
-              onPressed: () => _c.value.isPlaying ? _c.pause() : _c.play(),
-              child: Icon(_c.value.isPlaying ? Icons.pause : Icons.play_arrow))
-          : null,
-    );
-  }
-}
