@@ -187,14 +187,22 @@ class AuthService extends ChangeNotifier {
 
     _currentUser = User.fromJson(userData);
 
-    // App-only persistence: if the server didn't return a name (common when
-    // the backend doesn't store it), fall back to the name we cached locally
-    // on a previous sign-in so the user doesn't have to retype it.
-    if (_currentUser!.name.trim().isEmpty) {
-      final cached = _storage!.getUserName();
-      if (cached != null && cached.trim().isNotEmpty) {
-        _currentUser = _currentUser!.copyWith(name: cached);
-      }
+    // App-only persistence + self-heal. The backend stores a new user's name as
+    // 'Guest' until it's saved. If we have a real name cached locally from a
+    // previous sign-in, prefer it AND push it to the backend so it shows up
+    // everywhere (reviews, bookings) instead of 'Guest'.
+    final serverName = _currentUser!.name.trim();
+    final cachedName = (_storage!.getUserName() ?? '').trim();
+    final serverIsPlaceholder =
+        serverName.isEmpty || serverName.toLowerCase() == 'guest';
+    if (serverIsPlaceholder &&
+        cachedName.isNotEmpty &&
+        cachedName.toLowerCase() != 'guest') {
+      _currentUser = _currentUser!.copyWith(name: cachedName);
+      // Best-effort: persist the real name server-side (don't fail login on it).
+      try {
+        await _api.updateProfile({'name': cachedName});
+      } catch (_) {}
     }
 
     await _storage!.saveUserData(
